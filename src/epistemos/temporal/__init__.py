@@ -14,6 +14,7 @@ combining :func:`believed_at` (transaction axis) with :func:`valid_at` (valid ax
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -73,9 +74,22 @@ def as_of(
     return out
 
 
-def _rank_key(fact: dict[str, Any]) -> tuple[float, str, str]:
-    """Higher is "more current": greater confidence, then later assertion time."""
+TrustOf = Callable[[dict[str, Any]], float]
+
+
+def _rank_key(fact: dict[str, Any], trust_of: TrustOf | None) -> tuple[float, float, str, str]:
+    """Precedence for "most current" among contradictory believed facts, in order:
+
+    1. **source trust** (authority) — a trusted source outranks a rumour regardless of recency;
+    2. **confidence** — the asserted confidence of the fact;
+    3. **transaction time** — more recently asserted wins ties;
+    4. id — final deterministic tiebreak.
+
+    Trust and confidence stay *separate* dimensions (mission §15): they are distinct tuple
+    components, never blended into one scalar.
+    """
     return (
+        float(trust_of(fact)) if trust_of is not None else 0.0,
         float(fact.get("confidence", 1.0)),
         str(fact.get("tx_from") or ""),
         str(fact.get("id") or ""),
@@ -87,16 +101,19 @@ def resolve_current(
     *,
     at_valid: str | datetime | None = None,
     at_tx: str | datetime | None = None,
+    trust_of: TrustOf | None = None,
 ) -> dict[str, Any] | None:
     """Pick the single most-current fact from a same-(subject,predicate) group.
 
-    A fact with ``object == None`` represents "the relation ended / has no value"; if the
-    winning fact has a null object, there is no current value and ``None`` is returned.
+    ``trust_of`` maps a fact to its backing source's trust (authority) and, when supplied,
+    dominates the ranking so a low-trust contradiction cannot become "current". A fact with
+    ``object == None`` means "the relation ended"; if the winner is null, there is no current
+    value and ``None`` is returned.
     """
     candidates = as_of(facts, at_tx=at_tx, at_valid=at_valid, believed_only=True)
     if not candidates:
         return None
-    best = max(candidates, key=_rank_key)
+    best = max(candidates, key=lambda f: _rank_key(f, trust_of))
     if best.get("object") is None:
         return None
     return best

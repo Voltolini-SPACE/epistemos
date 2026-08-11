@@ -50,6 +50,16 @@ def test_point_in_time_before_any_knowledge_is_empty(engine: Engine, ctx: Princi
                         at_tx="2020-01-01T00:00:00Z") is None
 
 
+def test_valid_time_interval_is_half_open(engine: Engine, ctx: Principal) -> None:
+    # [valid_from, valid_to): lower bound INCLUSIVE, upper bound EXCLUSIVE.
+    engine.assert_fact(ctx, subject="A", predicate="p", object="X",
+                       valid_from="2026-01-01", valid_to="2026-02-01")
+    assert engine.as_of(ctx, "2026-01-01", subject="A", predicate="p") == "X"       # at from -> in
+    assert engine.as_of(ctx, "2026-01-31T23:59:59Z", subject="A", predicate="p") == "X"
+    assert engine.as_of(ctx, "2026-02-01", subject="A", predicate="p") is None       # at to -> out
+    assert engine.as_of(ctx, "2025-12-31T23:59:59Z", subject="A", predicate="p") is None
+
+
 def test_future_fact_not_current_until_valid(engine: Engine, ctx: Principal) -> None:
     # A fact whose validity starts in the future of the clock (clock is 2026-06).
     engine.assert_fact(ctx, subject="Carol", predicate="title", object="VP",

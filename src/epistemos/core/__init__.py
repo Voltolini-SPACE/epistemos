@@ -666,6 +666,21 @@ class Engine:
     # ======================================================================
     # temporal queries
     # ======================================================================
+    def _trust_lookup(self) -> Any:
+        """A cached fact -> source-trust function for authority-aware current resolution."""
+        cache: dict[str, float] = {}
+
+        def trust_of(fact: dict[str, Any]) -> float:
+            src_id = fact.get("source")
+            if not src_id:
+                return 0.0
+            if src_id not in cache:
+                src = self.store.get_object(src_id)
+                cache[src_id] = float(src.get("trust", 0.0)) if src is not None else 0.0
+            return cache[src_id]
+
+        return trust_of
+
     def current_fact(
         self, principal: Principal, *, subject: str, predicate: str, at_valid: Any = None
     ) -> Fact | None:
@@ -677,7 +692,7 @@ class Engine:
         facts = self.store.facts(
             principal.tenant, principal.namespace, subject=subject, predicate=predicate
         )
-        best = resolve_current(facts, at_valid=anchor, at_tx=None)
+        best = resolve_current(facts, at_valid=anchor, at_tx=None, trust_of=self._trust_lookup())
         return Fact.from_dict(best) if best is not None else None
 
     def current(
@@ -705,7 +720,7 @@ class Engine:
         facts = self.store.facts(
             principal.tenant, principal.namespace, subject=subject, predicate=predicate
         )
-        best = resolve_current(facts, at_valid=at_valid, at_tx=at_tx)
+        best = resolve_current(facts, at_valid=at_valid, at_tx=at_tx, trust_of=self._trust_lookup())
         return best.get("object") if best is not None else None
 
     def facts_for(

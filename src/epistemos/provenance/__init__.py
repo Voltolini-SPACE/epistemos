@@ -16,10 +16,25 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._util import canonical_json
 from ..storage import Store
 
 __all__ = ["explain", "explain_decision"]
+
+
+def _refs_id(value: Any, obj_id: str) -> bool:
+    """True if ``obj_id`` appears as a string leaf anywhere in ``value``. Short-circuits.
+
+    Cheaper and more precise than serializing the whole payload: it compares actual string
+    values (so a stray substring inside unrelated text cannot cause a false positive) and
+    stops at the first match.
+    """
+    if isinstance(value, str):
+        return value == obj_id
+    if isinstance(value, dict):
+        return any(_refs_id(v, obj_id) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_refs_id(v, obj_id) for v in value)
+    return False
 
 
 def _activities_for(store: Store, tenant: str, namespace: str, obj_id: str) -> list[dict[str, Any]]:
@@ -28,7 +43,7 @@ def _activities_for(store: Store, tenant: str, namespace: str, obj_id: str) -> l
     for rec in store.read_events():
         if rec.tenant != tenant or rec.namespace != namespace:
             continue
-        if obj_id in canonical_json(dict(rec.payload)):
+        if _refs_id(rec.payload, obj_id):
             acts.append(
                 {
                     "seq": rec.seq,
