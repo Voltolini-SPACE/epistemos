@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "epistemos"
+version = "0.1.0"
+description = "Sovereign, graph-native context, memory, provenance and decision-lineage engine for AI agents."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "EPISTEMOS" }]
+keywords = [
+  "knowledge-graph", "temporal", "bitemporal", "provenance", "memory",
+  "agent-memory", "context-engine", "decision-lineage", "graphrag", "local-first",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+]
+# Zero third-party runtime dependencies by design (local-first, zero-egress, minimal supply chain).
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10"]
+
+[project.urls]
+Homepage = "https://github.com/epistemos/epistemos"
+Documentation = "https://github.com/epistemos/epistemos/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/epistemos"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+  "security: adversarial / attack-surface tests",
+  "race: concurrency determinism tests",
+  "chaos: crash / fault-injection tests",
+  "slow: long-running tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "S"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B011"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["epistemos"]
+mypy_path = "src"
+strict = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
