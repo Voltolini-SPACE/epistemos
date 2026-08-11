@@ -49,6 +49,35 @@ Legend: ✅ PASS · 🟡 PARTIAL · ⛔ BLOCKED · ⬜ PENDING
 | HERMES_UNTOUCHED | ✅ | mtime unchanged vs ETAPA-0 |
 | OPENCLAW_UNTOUCHED | ✅ | mtime unchanged vs ETAPA-0 |
 
-## Final status
+## Final status (v0.1)
 
 `STATUS_FINAL = EPISTEMOS_V0_1_PASS` — tag `epistemos-v0.1.0`.
+
+---
+
+## EPISTEMOS-02 (SCALE-RETRIEVAL) gates
+
+Adds a rebuildable FTS index to eliminate the v0.1 O(N) search bottleneck while preserving all
+v0.1 properties. Detail: [`EPISTEMOS_V0_2_FINAL_REPORT.md`](EPISTEMOS_V0_2_FINAL_REPORT.md).
+
+| Gate | State | Evidence |
+|------|-------|----------|
+| BASELINE_REGRESSION (all v0.1 gates) | ✅ | 415 v0.1 tests green through IndexedRetriever |
+| RETRIEVAL_PROFILE | ✅ | `docs/benchmarks/RETRIEVAL_PROFILE_BASELINE.md` |
+| FTS | ✅ | `index/fts.py`; `tests/index/` |
+| EXPLAINABLE_FTS | ✅ | `tests/index/test_explainable_fts.py` |
+| INDEX_CONSISTENCY | ✅ | `tests/index/test_consistency_rebuild.py`; `verify_index_consistency()` |
+| INDEX_REBUILD | ✅ | before==after rebuild; `test_rebuild_reproduces_results` |
+| CRASH_RECOVERY (index) | ✅ | `tests/chaos/test_index_chaos.py` |
+| RETRIEVAL_SEMANTIC_PARITY | ✅ | `tests/index/test_parity.py` (legacy vs indexed) |
+| TEMPORAL_INDEX_QUERY | ✅ | `tests/index/test_temporal_index.py` |
+| INDEX_FALLBACK | ✅ | `tests/index/test_fallback.py`; explicit health states |
+| VECTOR_OPTIONAL | ✅ | `NullVectorIndex`; core passes with no embeddings |
+| FTS_SECURITY | ✅ | `tests/security/test_fts_security.py` |
+| INDEX_RACE (30 cycles) | ✅ | `tests/race/test_index_race.py` |
+| INDEX_CHAOS | ✅ | `tests/chaos/test_index_chaos.py` |
+| MUTATION (index boundaries) | ✅ | 18/18 killed (6 index mutants); `docs/security/MUTATION_REPORT.md` |
+| BENCHMARK (legacy vs indexed) | ✅ | `docs/benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md` |
+| ADRS 016–020 | ✅ | `docs/adr/` |
+
+`STATUS_FINAL = EPISTEMOS_V0_2_PASS` — tag `epistemos-v0.2.0` (v0.1.0 unchanged).
