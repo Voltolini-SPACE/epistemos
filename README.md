@@ -76,14 +76,68 @@ eng.explain(f.id)                                          # -> provenance genea
 The core (`src/epistemos/`) depends only on ports. Adapters depend on EPISTEMOS —
 never the reverse (`CORE ← ADAPTER`, never `CORE → NOMOS`).
 
+## What it is (and is not)
+
+**What is EPISTEMOS?** A sovereign, local-first engine for context, memory, provenance and
+decision-lineage — an append-only, hash-chained, **bitemporal** knowledge store with explainable
+retrieval, usable by any agent via SDK, REST, or MCP.
+
+**What is it *not*?** It is **not** an executor, a PDP, a policy authority, an orchestrator, a
+sandbox, or a substitute for NOMOS. It does not decide what an agent may do — it records what the
+system knows. It is not an LLM wrapper: the core needs no model.
+
+**Why does it exist?** Because agent memory today couples knowledge to a specific LLM/vendor/vector-DB,
+mutates state in place (losing history), severs provenance at ingest, and treats memory as a database
+rather than a replayed-into-context **injection sink**. EPISTEMOS fixes all four (see
+[`docs/research/EPISTEMOS_RESEARCH_FINAL.md`](docs/research/EPISTEMOS_RESEARCH_FINAL.md)).
+
+**Why not just a vector DB?** A vector DB gives fuzzy recall with no time, no provenance, no
+supersession, and opaque scores. EPISTEMOS answers *when a fact was true*, *when we believed it*,
+*where it came from*, and *why a result was returned* — and works with **no** embeddings.
+
+**Why not just a graph DB?** A graph DB gives you nodes/edges but not bitemporality, not tamper-evident
+provenance, not fail-closed tenancy, and usually a Cypher/SPARQL injection surface. EPISTEMOS is
+graph-native *plus* those properties, with no query language to inject into.
+
+**Why not Graphiti / Semantica / Mem0 / …?** They are excellent at parts (Graphiti's bitemporal edge,
+TrustGraph's PROV-O, Semantica's decision nodes) but every LLM-native one puts the model on the write
+path (non-deterministic, cloud-bound, poisonable) and none content-hashes its provenance or enforces
+fail-closed tenancy. EPISTEMOS keeps the good ideas and designs out the shared mistakes
+([`COMPETITOR_MATRIX.md`](docs/research/COMPETITOR_MATRIX.md)).
+
+**How does temporal memory work?** Every fact carries *valid time* and *transaction time*. Supersession
+closes belief without deleting; `current` asks "true & believed now", `as_of(V, T)` asks "what did we
+believe at T about world-time V". See [`ADR-003`](docs/adr/ADR-003-temporal-model.md).
+
+**How does provenance work?** Every object maps to W3C PROV Entity/Activity/Agent; `explain(id)` walks
+the derivation genealogy and cross-references the tamper-evident ledger. See
+[`ADR-004`](docs/adr/ADR-004-provenance-model.md).
+
+**How does tenancy work?** Every call carries a `Principal` (tenant/agent/namespace). Cross-scope access
+fails closed; agent-private memory is a per-agent namespace. See
+[`ADR-008`](docs/adr/ADR-008-identity-tenancy.md).
+
+**How to run locally?** `Engine.open("knowledge.epistemos")` (one SQLite file) or `Engine.open(":memory:")`.
+No server, no network, no model. Run `python examples/quickstart.py`.
+
+**How to export all data?** `engine.export()` → a versioned JSON event log (full history + provenance).
+Re-importable with integrity verification. EPISTEMOS is not a data prison.
+
+**How to remove it?** Delete the single `*.epistemos` / `*.db` file (and its `-wal`/`-shm` sidecars) and
+`pip uninstall epistemos`. Nothing else is touched; no daemon, no system state, no external service.
+
 ## Documentation
 
 - `docs/research/` — competitor census, feature harvest, final research report
-- `docs/spec/` — core data model, temporal model, provenance model
-- `docs/adr/` — architecture decision records (ADR-001 … ADR-015)
-- `docs/security/` — threat model, license matrix, dependency inventory / SBOM
-- `docs/benchmarks/` — reproducible benchmark methodology and results
+- `docs/spec/` — [core data model](docs/spec/CORE_MODEL.md), [memory model](docs/spec/MEMORY_MODEL.md)
+- `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-015)
+- `docs/security/` — [threat model](docs/security/THREAT_MODEL.md), license matrix, SBOM, zero-egress,
+  mutation report
+- `docs/benchmarks/` — [reproducible benchmark](docs/benchmarks/RESULTS.md) methodology and results
+- `docs/STATUS.md` — the V0.1 gate matrix and evidence
 
 ## License
 
-Apache-2.0. EPISTEMOS has **zero third-party runtime dependencies** by design.
+Apache-2.0. EPISTEMOS has **zero third-party runtime dependencies** by design (stdlib only).
+Clean-room implementation — not a fork, no copied code
+([attestation](docs/security/LICENSE_MATRIX.md)).
