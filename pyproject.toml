@@ -44,6 +44,7 @@ markers = [
   "security: adversarial / attack-surface tests",
   "race: concurrency determinism tests",
   "chaos: crash / fault-injection tests",
+  "integration: REST / MCP / SDK boundary tests",
   "slow: long-running tests",
 ]
 
