@@ -9,9 +9,9 @@ suite against the copy, classify by pytest **exit code** (mission §32). Reprodu
   bearing predicate), so the target is `SURVIVED == 0`.
 
 ```
-MUTANTS_TOTAL              = 12
-MUTANTS_NON_EQUIVALENT     = 12   (all curated mutants change behavior)
-MUTANTS_KILLED            = 12
+MUTANTS_TOTAL              = 18
+MUTANTS_NON_EQUIVALENT     = 18   (all curated mutants change behavior)
+MUTANTS_KILLED            = 18
 MUTANTS_SURVIVED          = 0
 INVALID_MUTATIONS         = 0
 CRITICAL_NON_EQUIVALENT_SURVIVED = 0
@@ -31,6 +31,12 @@ CRITICAL_NON_EQUIVALENT_SURVIVED = 0
 | `core_skip_ref_scope` | tenant-isolation | **KILLED** | pytest rc=1 | cross-tenant reference scope check |
 | `core_supersede_no_close` | supersession | **KILLED** | pytest rc=1 | supersede must close old belief |
 | `core_import_no_verify` | import | **KILLED** | pytest rc=1 | import chain verification on tamper |
+| `idx_search_tenant_leak` | index-tenant | **KILLED** | pytest rc=1 | FTS query tenant filter (cross-tenant leak) |
+| `idx_temporal_and_to_or` | index-temporal | **KILLED** | pytest rc=1 | temporal component = believed AND valid |
+| `idx_persist_skip_reindex` | index-consistency | **KILLED** | pytest rc=1 | writes must update the index |
+| `idx_verify_always_true` | index-consistency | **KILLED** | pytest rc=1 | verify detects index drift/corruption |
+| `idx_fallback_inverted` | index-fallback | **KILLED** | pytest rc=1 | use index only when HEALTHY else fall back |
+| `idx_lexical_zeroed` | index-scoring | **KILLED** | pytest rc=1 | lexical score contribution to explainability |
 
 **MUTATION_CRITICAL = PASS**
 

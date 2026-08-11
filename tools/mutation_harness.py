@@ -24,7 +24,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src" / "epistemos"
 # invariant tests to run against each mutant (fast; excludes env-specific source-check)
-TEST_TARGETS = ["tests/unit", "tests/security"]
+TEST_TARGETS = ["tests/unit", "tests/security", "tests/index"]
 IGNORE = ["--ignore=tests/unit/test_source_check.py"]
 
 # id, file (relative to src/epistemos), find, replace, boundary, note
@@ -77,6 +77,31 @@ MUTANTS = [
      "dict[str, Any], *, verify: bool = True, migrate: bool = False",
      "dict[str, Any], *, verify: bool = False, migrate: bool = False",
      "import", "import chain verification on tamper"),
+    # --- EPISTEMOS-02 index-boundary mutants (ETAPA 19) ---
+    ("idx_search_tenant_leak", "index/fts.py",
+     "AND tenant = ? AND namespace = ?",
+     "AND tenant != ? AND namespace = ?",
+     "index-tenant", "FTS query tenant filter (cross-tenant leak)"),
+    ("idx_temporal_and_to_or", "retrieval/__init__.py",
+     "believed_at(obj, at_tx) and valid_at(obj, at_valid)",
+     "believed_at(obj, at_tx) or valid_at(obj, at_valid)",
+     "index-temporal", "temporal component = believed AND valid"),
+    ("idx_persist_skip_reindex", "core/__init__.py",
+     "self.lexical_index.reindex(obj)",
+     "None",
+     "index-consistency", "writes must update the index"),
+    ("idx_verify_always_true", "index/fts.py",
+     "ok = (indexed == self._searchable_ids()) and (map_count == idx_count)",
+     "ok = True",
+     "index-consistency", "verify detects index drift/corruption"),
+    ("idx_fallback_inverted", "core/__init__.py",
+     "self.lexical_index.health() == IndexHealth.HEALTHY",
+     "self.lexical_index.health() != IndexHealth.HEALTHY",
+     "index-fallback", "use index only when HEALTHY else fall back"),
+    ("idx_lexical_zeroed", "retrieval/__init__.py",
+     'comp["lexical"] = lexical',
+     'comp["lexical"] = 0.0',
+     "index-scoring", "lexical score contribution to explainability"),
 ]
 
 

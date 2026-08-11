@@ -17,3 +17,8 @@
 | [013](ADR-013-adapter-architecture.md) | Adapter architecture: CORE ← ADAPTER, never the reverse |
 | [014](ADR-014-export-format.md) | Export format: versioned JSON event log, no pickle |
 | [015](ADR-015-licensing-strategy.md) | Licensing strategy: Apache-2.0, zero runtime deps, clean-room |
+| [016](ADR-016-search-index-architecture.md) | Search index architecture: rebuildable projection behind a port (v0.2) |
+| [017](ADR-017-fts-implementation.md) | FTS implementation: SQLite FTS5, safe query, parity differences (v0.2) |
+| [018](ADR-018-index-consistency.md) | Index consistency: transactional with the projection (v0.2) |
+| [019](ADR-019-index-recovery-fallback.md) | Index recovery & fallback: core never depends on the index (v0.2) |
+| [020](ADR-020-hybrid-retrieval-scoring.md) | Hybrid retrieval scoring: explicit, optional, no hidden formula (v0.2) |
