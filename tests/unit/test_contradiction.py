@@ -42,7 +42,9 @@ def test_contradict_changes_neither_belief(engine: Engine, ctx: Principal) -> No
     assert f2.id in g1.contradicts and f1.id in g2.contradicts
 
 
-def test_confirm_raises_confidence_and_records_corroboration(engine: Engine, ctx: Principal) -> None:
+def test_confirm_raises_confidence_and_records_corroboration(
+    engine: Engine, ctx: Principal
+) -> None:
     s2 = engine.add_source(ctx, uri="mem://second", trust=0.9)
     f = engine.assert_fact(ctx, subject="A", predicate="p", object="X", confidence=0.5)
     updated = engine.confirm(ctx, f.id, source=s2.id, delta_confidence=0.3)

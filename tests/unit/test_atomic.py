@@ -32,7 +32,6 @@ def test_fault_injection_leaves_no_intermediate_state(
 
     store = engine.store
     if stage == "before_ledger":
-        orig = store.append
         monkeypatch.setattr(store, "append", lambda *a, **k: (_ for _ in ()).throw(Boom()))
     elif stage == "during_ledger":
         monkeypatch.setattr(store, "_persist_record",

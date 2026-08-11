@@ -35,7 +35,10 @@ def test_caso2_retroactive_correction_separates_axes(engine: Engine, ctx: Princi
                      reason="correction: was Zeta all along")
 
     # transaction-time query: what did the system BELIEVE at T1 about valid-time Jan-15?
-    assert engine.as_of(ctx, "2026-01-15", subject="Alice", predicate="works_at", at_tx=t1) == "Alpha"
+    believed_at_t1 = engine.as_of(
+        ctx, "2026-01-15", subject="Alice", predicate="works_at", at_tx=t1
+    )
+    assert believed_at_t1 == "Alpha"
     # what is NOW believed about valid-time Jan-15?
     assert engine.as_of(ctx, "2026-01-15", subject="Alice", predicate="works_at") == "Zeta"
 

@@ -42,7 +42,10 @@ def test_temporal_component_marks_historical(engine: Engine, ctx: Principal) -> 
     engine.end_fact(ctx, f.id, valid_to="2026-02-01")  # ended in the past
     res = engine.search(ctx, subject="A", predicate="p", limit=10)
     # the ended (historical) fact scores temporal=0 and says so
-    hist = [r for r in res if r["temporal_state"] and r["temporal_state"]["valid_to"] == "2026-02-01"]
+    hist = [
+        r for r in res
+        if r["temporal_state"] and r["temporal_state"]["valid_to"] == "2026-02-01"
+    ]
     assert hist
     assert hist[0]["score_components"].get("temporal", 0.0) == 0.0
     assert "NOT currently" in hist[0]["why_returned"]

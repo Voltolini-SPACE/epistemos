@@ -85,10 +85,10 @@ def test_assert_vs_retract_vs_supersede(engine: Engine, ctx: Principal, cycle: i
 def test_parallel_tenant_writes_isolated(engine: Engine, cycle: int) -> None:
     ta = Principal(tenant="ta", agent="x", namespace="n")
     tb = Principal(tenant="tb", agent="y", namespace="n")
-    _run(engine, (
-        [lambda i=i: engine.assert_fact(ta, subject="A", predicate="p", object=f"{i}") for i in range(8)]
-        + [lambda i=i: engine.assert_fact(tb, subject="A", predicate="p", object=f"{i}") for i in range(8)]
-    ))
+    def mk(p: Principal, i: int):
+        return lambda: engine.assert_fact(p, subject="A", predicate="p", object=f"{i}")
+
+    _run(engine, [mk(ta, i) for i in range(8)] + [mk(tb, i) for i in range(8)])
     assert engine.store.counts("ta", "n")["fact"] == 8
     assert engine.store.counts("tb", "n")["fact"] == 8
     assert engine.verify_integrity() == 16

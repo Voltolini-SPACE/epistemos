@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import os
 
+from tests.conftest import ManualClock
+
 from epistemos import Engine, Principal
 from epistemos.storage import SQLiteStore
-from tests.conftest import ManualClock
 
 
 def _populate(engine: Engine, ctx: Principal) -> None:
