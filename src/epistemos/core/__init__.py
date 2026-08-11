@@ -1121,9 +1121,19 @@ class Engine:
     # ======================================================================
     # integrity, export/import, health, rebuild
     # ======================================================================
-    def verify_integrity(self) -> int:
-        """Verify the full hash chain. Returns the number of events verified."""
-        return verify_chain(self.store.read_events())
+    def verify_integrity(
+        self, *, expected_count: int | None = None, expected_head: str | None = None
+    ) -> int:
+        """Verify the full hash chain. Returns the number of events verified.
+
+        Pass ``expected_count``/``expected_head`` (an anchor pinned outside the store) to
+        also detect tail-truncation and full re-chained rewrites (mission checkpoint G).
+        """
+        return verify_chain(
+            self.store.read_events(),
+            expected_count=expected_count,
+            expected_head=expected_head,
+        )
 
     def rebuild_projection(self) -> int:
         """Rebuild all queryable state purely from the ledger. Returns events replayed."""

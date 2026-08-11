@@ -138,14 +138,27 @@ def seal(*, seq: int, event: Event, prev_hash: str) -> LedgerRecord:
     )
 
 
-def verify_chain(records: Iterable[LedgerRecord]) -> int:
-    """Verify hash linkage and per-record content hashes. Returns the count verified.
+def verify_chain(
+    records: Iterable[LedgerRecord],
+    *,
+    expected_count: int | None = None,
+    expected_head: str | None = None,
+) -> int:
+    """Verify hash linkage and per-record content/header hashes. Returns the count verified.
 
+    Detects, with no external state: payload edits, header edits (tenant/ts/actor/...),
+    mid-chain removals and reorders (seq gaps), duplicates, ``prev_hash`` swaps, and forged
+    inserts that were not fully re-chained.
+
+    A bare hash chain is **tamper-evident, not immutable**: tail-truncation and a complete
+    re-chained rewrite are only detectable against an external anchor. Pass ``expected_count``
+    and/or ``expected_head`` (e.g. persisted elsewhere or pinned by the caller) to catch those.
     Raises :class:`IntegrityError` on the first inconsistency (fail closed).
     """
     prev = GENESIS_HASH
     expected_seq = 1
     count = 0
+    last_hash = GENESIS_HASH
     for rec in records:
         if rec.seq != expected_seq:
             raise IntegrityError(f"ledger seq gap: expected {expected_seq}, got {rec.seq}")
@@ -158,6 +171,11 @@ def verify_chain(records: Iterable[LedgerRecord]) -> int:
         if recomputed_entry != rec.entry_hash:
             raise IntegrityError(f"ledger header tampered at seq {rec.seq}")
         prev = rec.entry_hash
+        last_hash = rec.entry_hash
         expected_seq += 1
         count += 1
+    if expected_count is not None and count != expected_count:
+        raise IntegrityError(f"ledger length mismatch: expected {expected_count}, got {count}")
+    if expected_head is not None and last_hash != expected_head:
+        raise IntegrityError("ledger head mismatch: chain does not end at the expected head")
     return count
