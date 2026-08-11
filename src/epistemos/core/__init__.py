@@ -1156,21 +1156,37 @@ class Engine:
             "events": events,
         }
 
-    def import_events(self, payload: dict[str, Any], *, verify: bool = True) -> int:
-        """Import a full ledger export into an EMPTY engine. Verifies the chain first.
+    def import_events(
+        self, payload: dict[str, Any], *, verify: bool = True, migrate: bool = False
+    ) -> int:
+        """Import a full ledger export into an EMPTY engine.
 
         Refuses to import into a non-empty store (fail closed) so import cannot silently
         interleave with existing history.
+
+        * Same-schema import is **verbatim**: original hashes are preserved and the chain
+          is verified (tamper-evident continuity).
+        * ``migrate=True`` upgrades an older-schema export via
+          :func:`epistemos.schema.migrate_export` and **re-seals** it into a fresh chain
+          (payloads changed shape, so original content hashes cannot be preserved).
         """
         if not isinstance(payload, dict) or payload.get("format") != EXPORT_FORMAT:
             raise SchemaError("unrecognized export format")
-        if int(payload.get("schema_version", -1)) != SCHEMA_VERSION:
-            raise SchemaError(
-                f"unsupported schema_version {payload.get('schema_version')} "
-                f"(engine supports {SCHEMA_VERSION})"
-            )
         if self.store.event_count() != 0:
             raise ConflictError("import target store is not empty")
+
+        version = int(payload.get("schema_version", -1))
+        if version != SCHEMA_VERSION:
+            if not migrate:
+                raise SchemaError(
+                    f"unsupported schema_version {payload.get('schema_version')} "
+                    f"(engine supports {SCHEMA_VERSION}); pass migrate=True to upgrade"
+                )
+            from ..schema import migrate_export
+
+            payload = migrate_export(payload)
+            return self._reseal_import(payload.get("events", []))
+
         records = [_dict_to_record(e) for e in payload.get("events", [])]
         if verify:
             verify_chain(records)
@@ -1181,6 +1197,20 @@ class Engine:
             for rec in self.store.read_events():
                 self._apply(rec)
         return len(records)
+
+    def _reseal_import(self, events: list[dict[str, Any]]) -> int:
+        """Re-seal migrated events into a fresh chain and project them."""
+        with self.store.atomic():
+            for e in events:
+                try:
+                    ev = Event(
+                        op=e["op"], ts=e["ts"], tenant=e["tenant"], namespace=e["namespace"],
+                        actor=e["actor"], principal=e.get("principal"), payload=e["payload"],
+                    )
+                except (KeyError, TypeError) as exc:
+                    raise SchemaError(f"malformed migrated event: {exc}") from exc
+                self._apply(self.store.append(ev))
+        return self.store.event_count()
 
     def health(self, principal: Principal | None = None, *, verify: bool = False) -> dict[str, Any]:
         head = self.store.head()
