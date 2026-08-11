@@ -58,6 +58,9 @@ ignore = ["S101"]  # assert is fine in tests
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "B011"]
+# S608: the SQLite adapter concatenates only STATIC SQL fragments; every value is passed
+# as a bound `?` parameter (never string-interpolated). Proven by tests/security/test_injection.py.
+"src/epistemos/storage/sqlite.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"
