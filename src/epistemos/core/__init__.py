@@ -4,11 +4,11 @@ Every mutation follows exactly one path:
 
     command -> validation -> auth/tenant check -> event -> ledger -> projection -> result
 
-There is no way to write state that bypasses the ledger: the only code that calls
-``store.put_object`` is :meth:`Engine._apply`, and the only caller of ``_apply`` is
-:meth:`Engine._emit`, which appends the sealed event first. Live writes and ledger
-import/rebuild share ``_apply``, so a restored database is byte-for-byte the same logical
-state as the original (event sourcing).
+There is no way to write state that bypasses the ledger: the only code that writes the
+projection is :meth:`Engine._persist` (store + lexical index), called only from
+:meth:`Engine._apply`, whose only caller is :meth:`Engine._emit`, which appends the sealed
+event first. Live writes and ledger import/rebuild share ``_apply``, so a restored database
+(and its index) is the same logical state as the original (event sourcing).
 
 Security posture: no operation runs without a :class:`~epistemos.identity.Principal`;
 tenant/namespace isolation is enforced on every read and write; ingested content is inert
@@ -32,6 +32,8 @@ from ..errors import (
 )
 from ..identity import Principal
 from ..identity import require_principal as _require_principal
+from ..index import IndexHealth
+from ..index.fts import SqliteFtsIndex
 from ..ledger import Event, LedgerRecord, Op, verify_chain
 from ..model import (
     SCHEMA_VERSION,
@@ -48,8 +50,8 @@ from ..model import (
 )
 from ..provenance import explain as _explain_obj
 from ..provenance import explain_decision as _explain_decision
-from ..retrieval import Retriever, Weights
-from ..storage import Store, open_store
+from ..retrieval import IndexedRetriever, LegacyScanRetriever, Retriever, Weights
+from ..storage import SQLiteStore, Store, open_store
 from ..temporal import resolve_current
 
 __all__ = ["Engine", "EngineLimits"]
@@ -96,8 +98,20 @@ class Engine:
     ) -> None:
         self.store = store
         self.clock = clock
-        self.retriever = retriever or Retriever()
         self.limits = limits or EngineLimits()
+        weights = retriever.weights if retriever is not None else None
+        self.legacy = LegacyScanRetriever(weights)
+        self.retriever = self.legacy  # back-compat attribute
+        # A lexical index accelerates TEXT search on the SQLite backend (FTS5). The in-memory
+        # backend keeps the O(N) scan (fine at test scale). The index is a rebuildable projection
+        # of the authoritative store — never a source of truth.
+        self.lexical_index: SqliteFtsIndex | None = None
+        self.indexed: IndexedRetriever | None = None
+        if isinstance(store, SQLiteStore):
+            idx = SqliteFtsIndex(store)
+            self.lexical_index = idx
+            self.indexed = IndexedRetriever(idx, weights)
+            idx.ensure_built(store)  # rebuild once if opening a pre-existing / unindexed DB
 
     @classmethod
     def open(
@@ -207,19 +221,27 @@ class Engine:
         self._apply(record)
         return record
 
+    def _persist(self, obj: dict[str, Any]) -> None:
+        """Write an object to the projection AND the lexical index. Index failures are isolated
+        (marked DEGRADED) so the authoritative core write still commits (ADR-019)."""
+        store = self.store
+        store.put_object(obj)
+        if self.lexical_index is not None:
+            self.lexical_index.reindex(obj)
+
     def _apply(self, record: LedgerRecord) -> None:
         """Project a sealed ledger record onto queryable state. Shared by live + import."""
         op = record.op
         p = dict(record.payload)
         if op in _PUT_OPS:
-            self.store.put_object(p)
+            self._persist(p)
         elif op in (Op.FACT_SUPERSEDED, Op.FACT_RETRACTED):
             obj = self.store.get_object(p["fact_id"])
             if obj is None:
                 raise IntegrityError(f"projection: missing fact {p['fact_id']} for {op}")
             obj["tx_to"] = p["tx_to"]
             obj["status"] = p["status"]
-            self.store.put_object(obj)
+            self._persist(obj)
         elif op == Op.FACT_CONFIRMED:
             obj = self.store.get_object(p["fact_id"])
             if obj is None:
@@ -228,7 +250,7 @@ class Engine:
             corr = list(obj.get("metadata", {}).get("corroborations", []))
             corr.append({"source": p.get("source"), "ts": record.ts})
             obj.setdefault("metadata", {})["corroborations"] = corr
-            self.store.put_object(obj)
+            self._persist(obj)
         elif op == Op.CONTRADICTION_RECORDED:
             self._apply_contradiction(p, record.ts)
         elif op == Op.ENTITY_MERGED:
@@ -251,7 +273,7 @@ class Engine:
                 notes = list(obj.get("metadata", {}).get("contradiction_notes", []))
                 notes.append({"other": b, "note": p["note"], "ts": ts})
                 obj.setdefault("metadata", {})["contradiction_notes"] = notes
-            self.store.put_object(obj)
+            self._persist(obj)
 
     def _apply_merge(self, p: dict[str, Any], ts: str) -> None:
         canonical = self.store.get_object(p["canonical"])
@@ -265,14 +287,14 @@ class Engine:
         merged = list(canonical.get("metadata", {}).get("merged_from", []))
         merged.extend(d for d in p["duplicates"] if d not in merged)
         canonical.setdefault("metadata", {})["merged_from"] = merged
-        self.store.put_object(canonical)
+        self._persist(canonical)
         for dup_id in p["duplicates"]:
             dup = self.store.get_object(dup_id)
             if dup is None:
                 raise IntegrityError(f"projection: missing duplicate entity {dup_id}")
             dup.setdefault("metadata", {})["merged_into"] = p["canonical"]
             dup["metadata"]["merged_at"] = ts
-            self.store.put_object(dup)
+            self._persist(dup)
 
     def _apply_split(self, p: dict[str, Any]) -> None:
         origin = self.store.get_object(p["entity"])
@@ -280,9 +302,9 @@ class Engine:
             raise IntegrityError(f"projection: missing entity {p['entity']} for split")
         into_ids = [e["id"] for e in p["into"]]
         origin.setdefault("metadata", {})["split_into"] = into_ids
-        self.store.put_object(origin)
+        self._persist(origin)
         for ent in p["into"]:
-            self.store.put_object(ent)
+            self._persist(ent)
 
     def _envelope(
         self, principal: Principal, kind: str, obj_id: str, ts: str, **extra: Any
@@ -1101,19 +1123,41 @@ class Engine:
         principal.require("read")
         if text is not None:
             self._str(text, "text", max_len=self.limits.max_text)
-        results = self.retriever.search(
-            self.store, principal.tenant, principal.namespace,
+        kw = dict(
             text=text, subject=subject, predicate=predicate, object=object,
             kinds=kinds, limit=int(limit), believed_only=believed_only,
             at_valid=at_valid, at_tx=at_tx,
         )
+        # Use the FTS index only when it is HEALTHY (complete + consistent). Otherwise fall back
+        # to the correct O(N) scan — never return stale/incomplete results from a degraded index.
+        use_index = (
+            self.indexed is not None
+            and self.lexical_index is not None
+            and self.lexical_index.health() == IndexHealth.HEALTHY
+        )
+        method = "scan-tfidf+structural+temporal+authority"
+        if use_index:
+            assert self.indexed is not None  # narrowed by use_index
+            try:
+                results = self.indexed.search(
+                    self.store, principal.tenant, principal.namespace, **kw
+                )
+                method = "fts5-bm25+structural+temporal+authority"
+            except Exception:  # noqa: BLE001 - any index error -> safe fallback
+                if self.lexical_index is not None:
+                    self.lexical_index.mark_degraded()
+                results = self.legacy.search(
+                    self.store, principal.tenant, principal.namespace, **kw
+                )
+        else:
+            results = self.legacy.search(self.store, principal.tenant, principal.namespace, **kw)
         return [
             {
                 "id": r.id,
                 "kind": r.kind,
                 "score": r.score,
                 "score_components": r.score_components,
-                "retrieval_method": "lexical+structural+temporal+authority",
+                "retrieval_method": method,
                 "source": r.source,
                 "temporal_state": r.temporal_state,
                 "why_returned": r.why,
@@ -1151,14 +1195,31 @@ class Engine:
         )
 
     def rebuild_projection(self) -> int:
-        """Rebuild all queryable state purely from the ledger. Returns events replayed."""
+        """Rebuild all queryable state (and the lexical index) purely from the ledger."""
         with self.store.atomic():
             self.store.clear_projection()
+            if self.lexical_index is not None:
+                self.lexical_index.clear()
             count = 0
             for rec in self.store.read_events():
-                self._apply(rec)
+                self._apply(rec)  # _apply -> _persist -> reindex rebuilds the index too
                 count += 1
         return count
+
+    def verify_index_consistency(self) -> bool:
+        """True iff the lexical index matches the authoritative searchable-object set.
+
+        The scan backend (in-memory) is always consistent because it reads live state.
+        """
+        if self.lexical_index is None:
+            return True
+        return self.lexical_index.verify(self.store)
+
+    def rebuild_index(self) -> int:
+        """Drop and rebuild the lexical index from the authoritative store. Returns objects done."""
+        if self.lexical_index is None:
+            return 0
+        return self.lexical_index.rebuild(self.store)
 
     def export(self) -> dict[str, Any]:
         """Full, versioned, human-readable export of the tamper-evident ledger."""
@@ -1241,6 +1302,18 @@ class Engine:
             except IntegrityError as exc:
                 info["integrity_ok"] = False
                 info["integrity_error"] = str(exc)
+        # lexical index state (EPISTEMOS-02): explicit, never hidden
+        if self.lexical_index is not None:
+            index_info: dict[str, Any] = {
+                "state": str(self.lexical_index.health()),
+                "count": self.lexical_index.count(),
+                "backend": "sqlite-fts5",
+            }
+            if verify:
+                index_info["consistent"] = self.verify_index_consistency()
+            info["index"] = index_info
+        else:
+            info["index"] = {"state": str(IndexHealth.UNAVAILABLE), "backend": "scan"}
         if principal is not None:
             principal = _require_principal(principal)
             info["scope"] = {"tenant": principal.tenant, "namespace": principal.namespace}
