@@ -134,7 +134,13 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 - `docs/security/` — [threat model](docs/security/THREAT_MODEL.md), license matrix, SBOM, zero-egress,
   mutation report
 - `docs/benchmarks/` — [reproducible benchmark](docs/benchmarks/RESULTS.md) methodology and results
-- `docs/STATUS.md` — the V0.1 gate matrix and evidence
+- `docs/STATUS.md` — the gate matrix and evidence (v0.1 + v0.2)
+
+> **v0.2 (SCALE-RETRIEVAL)** replaces the v0.1 O(N) text search with a rebuildable, tenant/temporal-
+> aware **FTS5 index** (247×–259× faster at 1k–10k; 100k search 6.2 s → 34 ms) while preserving
+> explainability, temporal semantics, provenance, tenancy and zero-egress. The scan remains the
+> correctness reference and safe fallback. See
+> [`docs/EPISTEMOS_V0_2_FINAL_REPORT.md`](docs/EPISTEMOS_V0_2_FINAL_REPORT.md) and ADR-016…020.
 
 ## License
 
