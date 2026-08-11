@@ -15,9 +15,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
-__all__ = ["tokens", "object_text", "fts_match_query"]
+__all__ = ["tokens", "object_text", "fts_match_query", "MAX_QUERY_TERMS"]
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+
+# Cap the number of distinct query terms fed to FTS to bound token-explosion / deep-boolean
+# query cost (a 1 MiB query could otherwise become a 100k-term OR). The first N terms are used.
+MAX_QUERY_TERMS = 64
 
 
 def tokens(text: str | None) -> list[str]:
@@ -55,5 +59,11 @@ def fts_match_query(text: str | None) -> str | None:
     toks = tokens(text)
     if not toks:
         return None
-    # tokens are [A-Za-z0-9]+ so they contain no quote/operator chars; quote defensively anyway
-    return " OR ".join('"' + t.replace('"', '""') + '"' for t in toks)
+    # de-duplicate (preserve order) and cap to bound query cost; tokens are [A-Za-z0-9]+ so they
+    # contain no quote/operator chars, but quote defensively anyway
+    seen: dict[str, None] = {}
+    for t in toks:
+        seen.setdefault(t, None)
+        if len(seen) >= MAX_QUERY_TERMS:
+            break
+    return " OR ".join('"' + t.replace('"', '""') + '"' for t in seen)

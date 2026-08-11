@@ -227,7 +227,10 @@ class Engine:
         store = self.store
         store.put_object(obj)
         if self.lexical_index is not None:
-            self.lexical_index.reindex(obj)
+            try:
+                self.lexical_index.reindex(obj)
+            except Exception:  # noqa: BLE001 - the core write must never depend on the index
+                self.lexical_index.mark_degraded()
 
     def _apply(self, record: LedgerRecord) -> None:
         """Project a sealed ledger record onto queryable state. Shared by live + import."""

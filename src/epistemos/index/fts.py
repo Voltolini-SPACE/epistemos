@@ -167,7 +167,11 @@ class SqliteFtsIndex(LexicalIndex):
             return False
         with self._lock:
             indexed = {r[0] for r in self._conn.execute("SELECT obj_id FROM fts_map").fetchall()}
-        ok = indexed == self._searchable_ids()
+            map_count = int(self._conn.execute("SELECT COUNT(*) FROM fts_map").fetchone()[0])
+            idx_count = int(self._conn.execute("SELECT COUNT(*) FROM fts_idx").fetchone()[0])
+        # detect both mapping drift (fts_map vs authoritative) and content drift (fts_idx rows
+        # deleted/corrupted while the mapping remains)
+        ok = (indexed == self._searchable_ids()) and (map_count == idx_count)
         if not ok and self._state == IndexHealth.HEALTHY:
             self._state = IndexHealth.DEGRADED
         return ok
