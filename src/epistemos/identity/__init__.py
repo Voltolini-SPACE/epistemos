@@ -70,6 +70,12 @@ _DEFAULT_CAPS = frozenset(
         "export",
         "space.create",  # anyone may create a space they own
         "space.read",
+        # EPISTEMOS-05: contributing and reviewing are basic collaborative rights — a claim is a
+        # contribution, never truth. The TRUTH gates (accepting a claim as knowledge, promoting
+        # toward PUBLIC) are NOT default and stay fail-closed.
+        "claim.create", "claim.read", "claim.review", "claim.confirm", "claim.dispute",
+        "claim.retract",
+        "evidence.create", "evidence.attach", "evidence.read",
     }
 )
 
@@ -82,6 +88,10 @@ KNOWLEDGE_CAPABILITIES = frozenset(
         "claim.confirm", "claim.dispute", "evidence.attach",
         "provenance.read", "history.read", "graph.traverse",
         "space.create", "space.read", "space.manage", "space.invite",
+        "claim.create", "claim.read", "claim.review", "claim.confirm", "claim.dispute",
+        "claim.retract",
+        "evidence.create", "evidence.attach", "evidence.read",
+        "knowledge.accept",  # the governed truth gate — NOT in the default set
     }
 )
 

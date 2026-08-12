@@ -144,6 +144,12 @@ def object_text(obj: dict[str, Any]) -> str:
         parts = [obj.get("summary")]
     elif kind == "observation":
         parts = [obj.get("text")]
+    elif kind == "claim":  # EPISTEMOS-05: claims are searchable, marked as CLAIM by the caller
+        parts = [obj.get("subject"), obj.get("predicate"), obj.get("object")]
+    elif kind == "evidence":
+        parts = [obj.get("title"), obj.get("uri"), obj.get("origin")]
+    elif kind == "review":
+        parts = [obj.get("rationale")]
     else:
         parts = [obj.get("id")]
     return " ".join(str(p) for p in parts if p)
