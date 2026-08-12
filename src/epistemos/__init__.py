@@ -50,7 +50,7 @@ from .retrieval import Retriever, Weights
 from .spaces import KnowledgeSpace, Visibility
 from .storage import MemoryStore, SQLiteStore, Store, open_store
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "__version__",

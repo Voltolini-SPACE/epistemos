@@ -39,3 +39,10 @@
 | [035](ADR-035-contradiction-pinning.md) | Contradiction pinning, authorization-safe (v0.6) |
 | [036](ADR-036-context-completeness.md) | Honest context completeness (`context_incomplete`) (v0.6) |
 | [037](ADR-037-experimental-continuations.md) | Experimental token-budget packing & continuations, off by default (v0.6) |
+| [038](ADR-038-epctx-wire-protocol.md) | EPCTX/1 wire protocol: DTO separate from the internal model (v0.7) |
+| [039](ADR-039-epctx-serialization-integrity.md) | EPCTX canonical serialization & integrity hash (v0.7) |
+| [040](ADR-040-epctx-completeness.md) | EPCTX completeness in the wire (v0.7) |
+| [041](ADR-041-epctx-renderer.md) | EPCTX prompt renderer: adapter, data is not instruction (v0.7) |
+| [042](ADR-042-epctx-expansion-handles.md) | EPCTX expansion handles: opaque, bound, experimental (v0.7) |
+| [043](ADR-043-epctx-consumer-profile.md) | EPCTX consumer profile: advisory, no provider coupling (v0.7) |
+| [044](ADR-044-epctx-versioning.md) | EPCTX versioning rules (v0.7) |

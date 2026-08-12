@@ -58,6 +58,20 @@ def _tool(engine: Engine, principal: Principal, name: str, args: dict[str, Any])
         return {"id": d.id}
     if name == "health":
         return engine.health(principal)
+    if name == "epistemos_context":
+        profile = args.get("consumer_profile")
+        if profile is not None and not isinstance(profile, dict):
+            raise ValueError("consumer_profile must be an object")
+        budget = args.get("requested_budget")
+        return engine.epctx(
+            principal, args.get("query"), intent=args.get("intent"), as_of=args.get("as_of"),
+            requested_budget=int(budget) if isinstance(budget, int) else None,
+            consumer_profile=profile)
+    if name == "epistemos_context_expand":
+        handle = args.get("handle")
+        if not isinstance(handle, str) or not handle:
+            raise ValueError("handle must be a non-empty string")
+        return engine.expand(principal, handle)
     raise KeyError(name)
 
 
@@ -107,6 +121,24 @@ TOOLS: dict[str, dict[str, Any]] = {
     },
     "health": {"description": "Store health for the caller's scope.",
                "inputSchema": {"type": "object", "properties": {}}},
+    "epistemos_context": {
+        "description": "Build an EPCTX/1 context document (typed objects, contradictions, "
+                       "completeness, temporal, provenance, token accounting). Identity is "
+                       "server-side; arguments carry no authority.",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": ["string", "null"]},
+            "intent": {"type": "string"},
+            "as_of": {"type": "string"},
+            "requested_budget": {"type": "integer"},
+            "consumer_profile": {"type": "object"},
+        }},
+    },
+    "epistemos_context_expand": {
+        "description": "Redeem an opaque EPCTX expansion handle (experimental). Re-authorized live "
+                       "for the caller; a stale/revoked/foreign handle returns nothing private.",
+        "inputSchema": {"type": "object", "required": ["handle"],
+                        "properties": {"handle": {"type": "string"}}},
+    },
 }
 
 

@@ -33,7 +33,7 @@ Python library; its **Panel** turns that core into a living, explorable interfac
 
 ## Status
 
-**Core `v0.6.0` + Panel `v1`.** Clean-room, not a fork or submodule of any system.
+**Core `v0.7.0` + Panel `v1`.** Clean-room, not a fork or submodule of any system.
 
 The **core** delivers **Collaborative Claims** — verifiable epistemology where *contribution ≠
 truth*: claims, typed evidence and individual reviews are first-class, **belief is derived (never
@@ -53,9 +53,20 @@ one attached to a retrieved claim, re-authorized), collapses only *provably-safe
 provenance, and declares any omission honestly (`context_incomplete`). It never widens the candidate
 set and never lowers an authorization boundary. See [`docs/context/`](docs/context/).
 
-Adversarially audited across every release. **946 tests** (incl. a private-leak battery and a
-full-stack HTTP boundary), mutation **39/39** killed on the claim core and **6/6** on the Context
-Envelope, ruff + mypy `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the
+**EPCTX/1** (`v0.7`) turns that context into a stable, **provider-agnostic consumption protocol**.
+Any agent — local, over REST (`POST /context`), or over MCP (`epistemos_context`) — reads the same
+document with the same semantics: objects typed (a claim is never a fact), contradictions in their own
+section, completeness and temporal state and provenance explicit, tokens accounted, and an integrity
+hash. Identity is always server-side; the request never carries authority. EPISTEMOS returns context
+and executes nothing — the consumer decides how to reason, a policy engine decides what is allowed.
+The protocol is **adapter-ready** for NOMOS / Hermes / OpenClaw and any custom agent, with **no**
+dependency on any of them (spec-only integration notes in [`docs/integrations/`](docs/integrations/)).
+See [`docs/protocol/`](docs/protocol/).
+
+Adversarially audited across every release. **996 tests** (incl. a private-leak battery, a
+full-stack HTTP boundary, and an EPCTX protocol suite across all three transports), mutation
+**39/39** killed on the claim core, **6/6** on the Context Envelope, and **7/7** on the EPCTX
+protocol, ruff + mypy `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the
 gate matrix and [`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md)
 for the Panel's freeze evidence.
 
@@ -229,7 +240,7 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 
 - `docs/research/` — competitor census, feature harvest, final research report
 - `docs/spec/` — [core data model](docs/spec/CORE_MODEL.md), [memory model](docs/spec/MEMORY_MODEL.md)
-- `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-037)
+- `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-044)
 - `docs/spaces/` — [Knowledge Spaces](docs/spaces/KNOWLEDGE_SPACE_MODEL.md) & capability model (v0.4)
 - `docs/claims/` — [claim](docs/claims/CLAIM_MODEL.md) / [evidence](docs/claims/EVIDENCE_MODEL.md) /
   [review](docs/claims/REVIEW_MODEL.md) / [belief](docs/claims/BELIEF_MODEL.md) models,
@@ -245,6 +256,15 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
   [contradiction pinning](docs/context/CONTRADICTION_PINNING.md),
   [security](docs/context/SECURITY.md), [benchmark](docs/context/BENCHMARK.md),
   [API](docs/context/API.md) (v0.6)
+- `docs/protocol/` — the EPCTX/1 protocol: [spec](docs/protocol/EPCTX_1_SPEC.md),
+  [serialization](docs/protocol/SERIALIZATION.md), [versioning](docs/protocol/VERSIONING.md),
+  [completeness](docs/protocol/COMPLETENESS.md), [temporal](docs/protocol/TEMPORAL.md),
+  [provenance](docs/protocol/PROVENANCE.md), [token accounting](docs/protocol/TOKEN_ACCOUNTING.md),
+  [rendering](docs/protocol/RENDERING.md), [security](docs/protocol/SECURITY.md),
+  [consumer guide](docs/protocol/CONSUMER_GUIDE.md) (v0.7)
+- `docs/integrations/` — adapter specs (spec-only): [generic agent](docs/integrations/GENERIC_AGENT.md),
+  [NOMOS](docs/integrations/NOMOS.md), [Hermes](docs/integrations/HERMES.md),
+  [OpenClaw](docs/integrations/OPENCLAW.md) (v0.7)
 - `docs/security/` — [threat model](docs/security/THREAT_MODEL.md), license matrix, SBOM, zero-egress,
   mutation report
 - `docs/benchmarks/` — [reproducible benchmark](docs/benchmarks/RESULTS.md) methodology and results

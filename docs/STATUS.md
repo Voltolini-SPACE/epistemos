@@ -224,3 +224,36 @@ Microconnections/Contextual Geometry stay rejected (EPISTEMOS-06). ADR-033…037
 | NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | additive module; no cross-project change |
 
 `STATUS_FINAL = EPISTEMOS_V0_6_PASS` — tag `epistemos-v0.6.0` (v0.1.0–v0.5.0 unchanged).
+
+## v0.7.0 — EPCTX Protocol (EPISTEMOS-09)
+
+Turn EPCTX/1 into a stable, provider-agnostic consumption contract with SDK/REST/MCP surfaces and a
+generic agent harness, without coupling the core to any consumer. ADR-038…044.
+
+| Gate | Status | Evidence |
+|---|---|---|
+| EPCTX_SPEC / SERIALIZATION / VERSIONING | ✅ | `docs/protocol/*`; `tests/protocol/test_protocol.py` |
+| DETERMINISTIC_SERIALIZATION | ✅ | canonical JSON; same logical → same bytes; integrity self-consistent |
+| GENERIC_SDK / REST_CONTEXT / MCP_CONTEXT | ✅ | `sdk.py`, `POST /context`, `epistemos_context`; parity test |
+| TRANSPORT_PARITY (local == REST == MCP) | ✅ | `test_local_rest_mcp_equivalent`, `test_expansion_parity…` |
+| GENERIC_AGENT_HARNESS | ✅ | `GenericAgentHarness` over the client; null/fake offline models |
+| CLAIM_TYPE_PRESERVED | ✅ | `object_type` + `belief_state`/`accepted_state`; claim never a fact |
+| CONTRADICTIONS_PRESERVED | ✅ | separate `contradictions` section + `disputed` flag |
+| CONTEXT_INCOMPLETE_PRESERVED | ✅ | `completeness{complete,reasons}` in the wire (ADR-040) |
+| TEMPORAL_STATE_PRESERVED | ✅ | per-object valid/tx time + `is_current`; doc has_current/has_historical |
+| PROVENANCE_PRESERVED | ✅ | per-object source/derived_from/evidence_refs; queryable table |
+| PRIVATE_EPCTX_LEAK = 0 | ✅ | `tests/protocol/test_protocol_security.py` |
+| PRIVATE_EXPANSION_LEAK = 0 | ✅ | forged/cross-principal/cross-tenant/revoked handles refused |
+| CROSS_TENANT_EPCTX_LEAK = 0 | ✅ | outsider document empty; REST/MCP identity server-side |
+| PROMPT_INJECTION_DATA_ONLY | ✅ | renderer fences evidence; `test_prompt_injection…stays_data` |
+| RACE (30×) | ✅ | `test_protocol_race_chaos.py`: context vs mutation, two-principal, expansion vs revoke |
+| CHAOS | ✅ | rebuild reproduces shape; expand against shrunken store = honest partial |
+| MUTATION NON_EQUIVALENT_SURVIVED = 0 | ✅ | 7/7 killed; `tools/eps09_mutation.py` |
+| AGENT_BENCH | ✅ | `tools/eps09_agent_bench.py`: EPCTX makes dispute/temporal/provenance available (raw does not) |
+| BACKWARD_COMPAT | ✅ | `engine.search` + `engine.context` unchanged; EPCTX additive |
+| FULL REGRESSION | ✅ | **996 passed**; ruff + mypy `--strict` clean |
+| DOCS / ADRS (038–044) | ✅ | `docs/protocol/` (10), `docs/integrations/` (4), `docs/adr/` |
+| ZERO_EGRESS / LOCAL_FIRST / MIT | ✅ | stdlib-only transports; localhost REST; MIT |
+| NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | spec-only integration notes; no core dependency, no import |
+
+`STATUS_FINAL = EPISTEMOS_V0_7_PASS` — tag `epistemos-v0.7.0` (v0.1.0–v0.6.0 unchanged).
