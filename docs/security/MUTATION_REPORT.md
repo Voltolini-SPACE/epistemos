@@ -9,9 +9,9 @@ suite against the copy, classify by pytest **exit code** (mission §32). Reprodu
   bearing predicate), so the target is `SURVIVED == 0`.
 
 ```
-MUTANTS_TOTAL              = 18
-MUTANTS_NON_EQUIVALENT     = 18   (all curated mutants change behavior)
-MUTANTS_KILLED            = 18
+MUTANTS_TOTAL              = 25
+MUTANTS_NON_EQUIVALENT     = 25   (all curated mutants change behavior)
+MUTANTS_KILLED            = 25
 MUTANTS_SURVIVED          = 0
 INVALID_MUTATIONS         = 0
 CRITICAL_NON_EQUIVALENT_SURVIVED = 0
@@ -37,6 +37,13 @@ CRITICAL_NON_EQUIVALENT_SURVIVED = 0
 | `idx_verify_always_true` | index-consistency | **KILLED** | pytest rc=1 | verify detects index drift/corruption |
 | `idx_fallback_inverted` | index-fallback | **KILLED** | pytest rc=1 | use index only when HEALTHY else fall back |
 | `idx_lexical_zeroed` | index-scoring | **KILLED** | pytest rc=1 | lexical score contribution to explainability |
+| `core_import_scope_authority` | tenant-isolation | **KILLED** | pytest rc=1 | ledger header is the sole scope authority on import (A-01) |
+| `core_belief_reclose` | bitemporal | **KILLED** | pytest rc=1 | projection keeps the earliest belief close (A-12) |
+| `core_open_belief_guard` | bitemporal | **KILLED** | pytest rc=1 | refuse to re-close an already-closed belief (A-12) |
+| `core_confirm_negative_delta` | agent-isolation | **KILLED** | pytest rc=1 | confirm only corroborates, never lowers confidence (B-03) |
+| `retrieval_source_scope` | tenant-isolation | **KILLED** | pytest rc=1 | source is never dereferenced across scope (B-06) |
+| `idx_verify_content_drift` | index-consistency | **KILLED** | pytest rc=1 | verify detects FTS content-cell corruption (B-01) |
+| `rest_none_principal` | auth-fail-closed | **KILLED** | pytest rc=1 | REST refuses a non-Principal from the auth resolver (B-01) |
 
 **MUTATION_CRITICAL = PASS**
 

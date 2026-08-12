@@ -48,14 +48,14 @@ src = eng.add_source(ctx, uri="mem://note-1", kind="note", trust=0.6)
 f = eng.assert_fact(ctx, subject="Alice", predicate="works_at", object="X",
                     valid_from="2026-01-01", source=src.id)
 
-# later: Alice leaves X — supersede, do not delete
-eng.supersede(ctx, f.id, reason="Alice left X",
-              new=dict(subject="Alice", predicate="works_at", object=None,
-                       valid_from="2026-02-01"))
+# later: Alice leaves X on 2026-02-01. Model this by ENDING the fact's world-validity —
+# the value X is preserved over [2026-01-01, 2026-02-01), so history is not lost.
+# (Use supersede() instead when the *value* was wrong and should be replaced.)
+eng.end_fact(ctx, f.id, valid_to="2026-02-01", reason="Alice left X")
 
-eng.current(ctx, subject="Alice", predicate="works_at")   # -> None (she left)
-eng.as_of(ctx, "2026-01-15", subject="Alice", predicate="works_at")  # -> "X"
-eng.explain(f.id)                                          # -> provenance genealogy
+eng.current(ctx, subject="Alice", predicate="works_at")   # -> None (not valid now)
+eng.as_of(ctx, "2026-01-15", subject="Alice", predicate="works_at")  # -> "X" (she worked there then)
+eng.explain(ctx, f.id)                                     # -> provenance genealogy
 ```
 
 ## Architecture
