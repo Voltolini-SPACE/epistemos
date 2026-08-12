@@ -89,6 +89,31 @@ def _nonlexical_components(
     return comp
 
 
+def matches_structural(
+    obj: dict[str, Any],
+    *,
+    subject: str | None,
+    predicate: str | None,
+    object: str | None,  # noqa: A002
+) -> bool:
+    """Does ``obj`` satisfy every supplied structural constraint?
+
+    A query constraint **filters**; it is not merely a ranking hint. Only facts carry
+    subject/predicate/object, so a non-fact can never satisfy one — asking for
+    ``subject="Alice"`` among documents is legitimately empty rather than "every document,
+    ranked by recency" (EPISTEMOS-03, A-03/A-04; ADR-021).
+    """
+    if subject is None and predicate is None and object is None:
+        return True
+    if obj.get("kind") != "fact":
+        return False
+    return all(
+        obj.get(key) == want
+        for key, want in (("subject", subject), ("predicate", predicate), ("object", object))
+        if want is not None
+    )
+
+
 def _temporal_state(obj: dict[str, Any]) -> dict[str, Any] | None:
     if obj.get("kind") != "fact":
         return None
@@ -176,6 +201,8 @@ class LegacyScanRetriever(_BaseRetriever):
                 continue
             if believed_only and obj.get("kind") == "fact" and obj.get("tx_to") is not None:
                 continue
+            if not matches_structural(obj, subject=subject, predicate=predicate, object=object):
+                continue
             candidates.append(obj)
 
         df: dict[str, int] = {}
@@ -195,6 +222,8 @@ class LegacyScanRetriever(_BaseRetriever):
             )
             if query_terms:
                 comp["lexical"] = _tfidf(query_terms, doc_tokens.get(obj["id"], []), df, n_docs)
+                if not comp["lexical"]:
+                    continue  # a text query that matched no term is not a hit (ADR-021)
             total = self._total(comp)
             if total <= 0.0:
                 continue
@@ -243,6 +272,9 @@ class IndexedRetriever(_BaseRetriever):
                 if kinds is not None and obj.get("kind") not in kinds:
                     continue
                 if believed_only and obj.get("kind") == "fact" and obj.get("tx_to") is not None:
+                    continue
+                if not matches_structural(obj, subject=subject, predicate=predicate,
+                                          object=object):
                     continue
                 pairs.append((obj, lexical))
         else:
