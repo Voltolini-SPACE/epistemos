@@ -1812,7 +1812,7 @@ class Engine:
     # retrieval & explanation
     # ======================================================================
     def is_readable(self, principal: Principal, obj: dict[str, Any]) -> bool:
-        """Public authorization predicate: may ``principal`` READ ``obj``? (panel boundary, ADR-030).
+        """Public authorization predicate: may ``principal`` READ ``obj``? (panel boundary, ADR-30).
 
         The single decision the API/event boundary uses to gate every listing, graph node/edge,
         metric, timeline entry and stream event before it is serialized to a consumer. It is exactly

@@ -14,6 +14,7 @@ PRIVATE claim only ``alice`` can read sits next to the shared research space, so
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ..core import Engine
 from ..identity import _DEFAULT_CAPS, Principal
@@ -79,7 +80,7 @@ def seed(engine: Engine, identities: DemoIdentities) -> dict[str, str]:
 
     # the research backbone (sources, entities, facts) is shared into the team space so the whole
     # team sees a connected graph. The private claim + its own source/evidence stay PRIVATE below.
-    def share(obj):
+    def share(obj: Any) -> Any:
         engine.share(hermes, obj.id, into=research.id)
         return obj
 
