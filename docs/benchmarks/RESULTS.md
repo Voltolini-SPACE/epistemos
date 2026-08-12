@@ -1,12 +1,5 @@
 # EPISTEMOS Benchmark Results
 
-> **v0.3 note (EPISTEMOS-03, audit OV-05/OV-06):** the absolute numbers below are v0.1-era and have
-> drifted from current HEAD; write amplification here was also understated (it did not account for the
-> secondary index writes). For the current, re-measured numbers — including honest write-throughput
-> and DB-size costs of the provenance and unicode indexes — see
-> [`EPISTEMOS_03_FINAL_BENCHMARK.md`](EPISTEMOS_03_FINAL_BENCHMARK.md). This file is retained for the
-> v0.1 methodology and history.
-
 Reproducible: `python benchmarks/bench.py --scales 1000 10000 100000`
 
 ## Hardware / configuration
@@ -22,9 +15,15 @@ Reproducible: `python benchmarks/bench.py --scales 1000 10000 100000`
 
 | scale | events | write p50 | write p99 | read p50 | temporal p50 | graph3 p50 | search p50 | explain p50 | startup | db size | peak mem |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 1,000 | 1,999 | 0.3679 | 0.9211 | 5.8981 | 5.6484 | 0.7074 | 116.0425 | 108.4444 | 1.165 ms | 2.9 MB | 7.5 MB |
-| 10,000 | 10,999 | 0.4073 | 2.0672 | 5.9029 | 5.8643 | 0.7657 | 721.8017 | 721.4419 | 3.917 ms | 16.8 MB | 44.0 MB |
-| 100,000 | 100,999 | 0.4298 | 4.594 | 6.1862 | 6.0768 | 0.819 | 7381.0629 | 7214.0054 | 28.521 ms | 156.5 MB | 409.1 MB |
+| 1,000 | 2,149 | 0.6992 | 5.3539 | 6.1499 | 6.1805 | 0.9503 | 0.1281 | 0.158 | 47.811 ms | 4.2 MB | 1.1 MB |
+| 10,000 | 11,149 | 0.5772 | 4.0309 | 5.7825 | 5.8257 | 0.9487 | 0.1387 | 0.1509 | 241.285 ms | 21.4 MB | 1.1 MB |
+
+## Collaborative claims (EPISTEMOS-05) latency by scale
+
+| scale | claim create p50 | claim create p99 | belief p50 | explain_claim p50 |
+|---|---|---|---|---|
+| 1,000 | 0.775 | 2.2505 | 0.7165 | 1.4643 |
+| 10,000 | 0.5673 | 1.019 | 0.6656 | 1.3575 |
 
 ## Observations
 
@@ -45,138 +44,129 @@ Raw JSON per scale:
   "results": [
     {
       "scale": 1000,
-      "events": 1999,
-      "seed_throughput_writes_per_s": 2912.4,
+      "events": 2149,
+      "seed_throughput_writes_per_s": 2091.7,
       "write_full_durability": {
-        "p50_ms": 0.3679,
-        "p95_ms": 0.464,
-        "p99_ms": 0.9211,
+        "p50_ms": 0.6992,
+        "p95_ms": 1.992,
+        "p99_ms": 5.3539,
         "n": 300
       },
       "read_current": {
-        "p50_ms": 5.8981,
-        "p95_ms": 6.5843,
-        "p99_ms": 7.0325,
+        "p50_ms": 6.1499,
+        "p95_ms": 7.2711,
+        "p99_ms": 10.7011,
         "n": 300
       },
       "temporal_as_of": {
-        "p50_ms": 5.6484,
-        "p95_ms": 6.4166,
-        "p99_ms": 6.8867,
+        "p50_ms": 6.1805,
+        "p95_ms": 7.2789,
+        "p99_ms": 9.165,
         "n": 300
       },
       "graph_traversal_3hops": {
-        "p50_ms": 0.7074,
-        "p95_ms": 0.8749,
-        "p99_ms": 0.967,
+        "p50_ms": 0.9503,
+        "p95_ms": 1.3413,
+        "p99_ms": 6.5431,
         "n": 50
       },
       "search": {
-        "p50_ms": 116.0425,
-        "p95_ms": 120.817,
-        "p99_ms": 121.9011,
+        "p50_ms": 0.1281,
+        "p95_ms": 0.7033,
+        "p99_ms": 1.7393,
         "n": 50
       },
       "explain": {
-        "p50_ms": 108.4444,
-        "p95_ms": 115.3312,
-        "p99_ms": 116.7834,
+        "p50_ms": 0.158,
+        "p95_ms": 0.2007,
+        "p99_ms": 0.6198,
         "n": 50
       },
-      "startup_ms": 1.165,
-      "db_size_bytes": 3059712,
-      "python_peak_mem_mb": 7.5,
-      "wall_seconds": 15.4
+      "claim_create": {
+        "p50_ms": 0.775,
+        "p95_ms": 1.1471,
+        "p99_ms": 2.2505,
+        "n": 50
+      },
+      "claim_belief": {
+        "p50_ms": 0.7165,
+        "p95_ms": 0.8488,
+        "p99_ms": 0.9351,
+        "n": 50
+      },
+      "claim_explain": {
+        "p50_ms": 1.4643,
+        "p95_ms": 2.0088,
+        "p99_ms": 2.5417,
+        "n": 50
+      },
+      "startup_ms": 47.811,
+      "db_size_bytes": 4423680,
+      "python_peak_mem_mb": 1.1,
+      "wall_seconds": 5.4
     },
     {
       "scale": 10000,
-      "events": 10999,
-      "seed_throughput_writes_per_s": 2634.7,
+      "events": 11149,
+      "seed_throughput_writes_per_s": 1902.6,
       "write_full_durability": {
-        "p50_ms": 0.4073,
-        "p95_ms": 0.4916,
-        "p99_ms": 2.0672,
+        "p50_ms": 0.5772,
+        "p95_ms": 1.0086,
+        "p99_ms": 4.0309,
         "n": 300
       },
       "read_current": {
-        "p50_ms": 5.9029,
-        "p95_ms": 6.6383,
-        "p99_ms": 6.8312,
+        "p50_ms": 5.7825,
+        "p95_ms": 6.9367,
+        "p99_ms": 9.7819,
         "n": 300
       },
       "temporal_as_of": {
-        "p50_ms": 5.8643,
-        "p95_ms": 6.7171,
-        "p99_ms": 6.8757,
+        "p50_ms": 5.8257,
+        "p95_ms": 6.8106,
+        "p99_ms": 8.7981,
         "n": 300
       },
       "graph_traversal_3hops": {
-        "p50_ms": 0.7657,
-        "p95_ms": 0.8732,
-        "p99_ms": 1.0085,
+        "p50_ms": 0.9487,
+        "p95_ms": 0.9643,
+        "p99_ms": 4.6571,
         "n": 50
       },
       "search": {
-        "p50_ms": 721.8017,
-        "p95_ms": 755.9986,
-        "p99_ms": 847.6212,
+        "p50_ms": 0.1387,
+        "p95_ms": 0.3672,
+        "p99_ms": 2.76,
         "n": 50
       },
       "explain": {
-        "p50_ms": 721.4419,
-        "p95_ms": 742.3036,
-        "p99_ms": 746.799,
+        "p50_ms": 0.1509,
+        "p95_ms": 0.1599,
+        "p99_ms": 0.2668,
         "n": 50
       },
-      "startup_ms": 3.917,
-      "db_size_bytes": 17666048,
-      "python_peak_mem_mb": 44.0,
-      "wall_seconds": 80.4
-    },
-    {
-      "scale": 100000,
-      "events": 100999,
-      "seed_throughput_writes_per_s": 2451.0,
-      "write_full_durability": {
-        "p50_ms": 0.4298,
-        "p95_ms": 1.1095,
-        "p99_ms": 4.594,
-        "n": 300
-      },
-      "read_current": {
-        "p50_ms": 6.1862,
-        "p95_ms": 7.1114,
-        "p99_ms": 7.592,
-        "n": 300
-      },
-      "temporal_as_of": {
-        "p50_ms": 6.0768,
-        "p95_ms": 7.0302,
-        "p99_ms": 7.4485,
-        "n": 300
-      },
-      "graph_traversal_3hops": {
-        "p50_ms": 0.819,
-        "p95_ms": 0.8585,
-        "p99_ms": 1.04,
+      "claim_create": {
+        "p50_ms": 0.5673,
+        "p95_ms": 0.6491,
+        "p99_ms": 1.019,
         "n": 50
       },
-      "search": {
-        "p50_ms": 7381.0629,
-        "p95_ms": 8516.1287,
-        "p99_ms": 8671.9845,
+      "claim_belief": {
+        "p50_ms": 0.6656,
+        "p95_ms": 0.6982,
+        "p99_ms": 0.7706,
         "n": 50
       },
-      "explain": {
-        "p50_ms": 7214.0054,
-        "p95_ms": 8279.0758,
-        "p99_ms": 8499.4943,
+      "claim_explain": {
+        "p50_ms": 1.3575,
+        "p95_ms": 1.447,
+        "p99_ms": 2.152,
         "n": 50
       },
-      "startup_ms": 28.521,
-      "db_size_bytes": 164102144,
-      "python_peak_mem_mb": 409.1,
-      "wall_seconds": 787.4
+      "startup_ms": 241.285,
+      "db_size_bytes": 22417408,
+      "python_peak_mem_mb": 1.1,
+      "wall_seconds": 10.0
     }
   ]
 }

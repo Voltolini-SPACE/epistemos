@@ -94,10 +94,25 @@ def bench_scale(n: int, sample: int = 300) -> dict:
     reads = _sample(lambda i: engine.current(CTX, subject="hot", predicate="p"), sample)
     temporal = _sample(
         lambda i: engine.as_of(CTX, "2026-01-01", subject="hot", predicate="p"), sample)
-    graph = _sample(lambda i: engine.query_graph(CTX, node_ids[i % len(node_ids)], max_hops=3), heavy)
+    graph = _sample(
+        lambda i: engine.query_graph(CTX, node_ids[i % len(node_ids)], max_hops=3), heavy)
     search = _sample(lambda i: engine.search(CTX, text=f"v{i}", limit=10), heavy)
     a_fact = engine.facts_for(CTX, subject="hot", believed_only=True)[0].id
     explain = _sample(lambda i: engine.explain(CTX, a_fact), heavy)
+
+    # EPISTEMOS-05 claim graph: create → review → derived belief → explain_claim, sampled at scale.
+    # Claims are new object kinds on the same store — the collaborative layer's per-op cost.
+    claim_ids = [
+        engine.create_claim(CTX, subject=f"c{i}", predicate="asserts", object=f"o{i}").id
+        for i in range(heavy)
+    ]
+    for cid in claim_ids:
+        engine.review_claim(CTX, cid, verdict="confirm")
+    claim_create = _sample(
+        lambda i: engine.create_claim(CTX, subject=f"cc{i}", predicate="p", object=f"v{i}"), heavy)
+    claim_belief = _sample(lambda i: engine.belief(CTX, claim_ids[i % len(claim_ids)]), heavy)
+    claim_explain = _sample(
+        lambda i: engine.explain_claim(CTX, claim_ids[i % len(claim_ids)]), heavy)
 
     current_peak = tracemalloc.get_traced_memory()[1]
     tracemalloc.stop()
@@ -137,6 +152,9 @@ def bench_scale(n: int, sample: int = 300) -> dict:
         "graph_traversal_3hops": stat(graph),
         "search": stat(search),
         "explain": stat(explain),
+        "claim_create": stat(claim_create),
+        "claim_belief": stat(claim_belief),
+        "claim_explain": stat(claim_explain),
         "startup_ms": round(startup_ms, 3),
         "db_size_bytes": db_bytes,
         "python_peak_mem_mb": round(current_peak / 1024 / 1024, 1),
@@ -178,6 +196,16 @@ def render_md(hw: dict, results: list[dict]) -> str:
             f"{r['graph_traversal_3hops']['p50_ms']} | {r['search']['p50_ms']} | "
             f"{r['explain']['p50_ms']} | {r['startup_ms']} ms | "
             f"{r['db_size_bytes'] / 1024 / 1024:.1f} MB | {r['python_peak_mem_mb']} MB |"
+        )
+    lines.append("")
+    lines.append("## Collaborative claims (EPISTEMOS-05) latency by scale")
+    lines.append("")
+    lines.append("| scale | claim create p50 | claim create p99 | belief p50 | explain_claim p50 |")
+    lines.append("|" + "---|" * 5)
+    for r in results:
+        lines.append(
+            f"| {r['scale']:,} | {r['claim_create']['p50_ms']} | {r['claim_create']['p99_ms']} | "
+            f"{r['claim_belief']['p50_ms']} | {r['claim_explain']['p50_ms']} |"
         )
     lines.append("")
     lines.append("## Observations")
