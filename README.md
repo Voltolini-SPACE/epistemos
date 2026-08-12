@@ -1,6 +1,17 @@
-# EPISTEMOS
+<p align="center">
+  <img src="docs/brand/assets/logo-horizontal.svg" alt="EPISTEMOS" width="380"/>
+</p>
 
-**Sovereign, graph-native context, memory, provenance and decision-lineage engine for AI agents.**
+<p align="center"><strong>Sovereign, graph-native context, memory, provenance and decision-lineage engine for AI agents.</strong></p>
+
+<p align="center">
+  <a href="https://voltolini.space/epistemos">Website</a> ·
+  <a href="docs/adr/README.md">Architecture (ADRs)</a> ·
+  <a href="https://github.com/Voltolini-SPACE/epistemos/releases">Releases</a> ·
+  Apache-2.0 · Python ≥3.11 · <strong>zero runtime dependencies</strong>
+</p>
+
+---
 
 EPISTEMOS is the layer that answers *what the system knows, how it knows it, when it
 knew it, and where that knowledge came from* — independent of any single LLM, provider,
@@ -8,12 +19,19 @@ agent framework, vector database or graph database.
 
 > NOMOS decides **what an agent may do**. EPISTEMOS records **what the system knows** —
 > and can be used by NOMOS, Hermes, OpenClaw, or any other agent without becoming a
-> mandatory dependency of any of them.
+> mandatory dependency of any of them. (Those integrations are **adapter-ready / planned**,
+> not yet shipped.)
 
 ## Status
 
-`v0.1` — clean-room implementation. Not a fork, not a submodule of any existing system.
-See [`docs/STATUS.md`](docs/STATUS.md) for the current gate matrix and evidence.
+**`v0.3.0` — developer preview.** Clean-room, not a fork or submodule of any system.
+Adversarially audited (43 findings fixed), **700 tests**, mutation **25/25** killed,
+ruff + mypy `--strict` clean. See [`docs/STATUS.md`](docs/STATUS.md) for the full gate matrix.
+
+**Measured, reproducible** (`benchmarks/`):
+- 100k lexical **search: 6.2 s → 34 ms (~183×)** vs the O(N) scan (v0.2, FTS5 index).
+- `explain()` **provenance: ~1.9 s → ~0.05 ms at 100k (~33,800×)** (v0.3, provenance index).
+- Write latency stays ~0.4 ms; the core makes **no network calls** and needs **no LLM**.
 
 ## Design principles (enforced, not aspirational)
 

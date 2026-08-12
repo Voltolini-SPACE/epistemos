@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a defect in the EPISTEMOS core, SDK, REST, or MCP boundary.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "For **security** vulnerabilities, do not use this form — see SECURITY.md (private report)."
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: "epistemos-v0.3.0 (or a commit sha)"
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal steps or a failing test (ideally in the style of tests/).
+      placeholder: |
+        from epistemos import Engine, Principal
+        ...
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations: { required: true }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [temporal, provenance, ledger, tenancy/isolation, retrieval/index, storage, SDK, REST, MCP, other]
+    validations: { required: true }
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Python 3.14 / macOS 15 / SQLite 3.53"

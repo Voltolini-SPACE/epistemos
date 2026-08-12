@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a capability for EPISTEMOS.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: The measured need or use-case. EPISTEMOS prioritizes measured gaps over ideas.
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How it could work while preserving the invariants (local-first, zero-egress, no mandatory LLM, zero runtime deps, bitemporal, provenance, fail-closed tenancy).
+    validations: { required: true }
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariant check
+      options:
+        - label: Keeps the core zero-egress and model-optional (no mandatory LLM)
+        - label: Adds no third-party runtime dependency (or justifies one)
+        - label: Preserves bitemporal / provenance / fail-closed tenancy

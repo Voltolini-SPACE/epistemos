@@ -6,5 +6,7 @@ import epistemos
 
 
 def test_source_is_repo_tree() -> None:
-    assert epistemos.__file__.endswith("/Users/AI/Projects/epistemos/src/epistemos/__init__.py")
+    # portable: an editable install from this repo resolves under `src/epistemos/`, whereas an
+    # installed wheel would live at `site-packages/epistemos/` (no `src/`). Machine-independent.
+    assert epistemos.__file__.replace("\\", "/").endswith("src/epistemos/__init__.py")
     assert epistemos.__version__ == "0.3.0"

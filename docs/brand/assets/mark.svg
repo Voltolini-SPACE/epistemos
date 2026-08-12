@@ -1,0 +1,13 @@
+<svg width="96" height="96" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="EPISTEMOS mark">
+  <title>EPISTEMOS — epistemic strata</title>
+  <!-- provenance spine (lineage through time) -->
+  <path d="M15 9 V39" stroke="#4A50C4" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- temporal strata (past / present / distilled knowledge) -->
+  <path d="M15 13 H33" stroke="#4A50C4" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M15 24 H39" stroke="#4A50C4" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M15 35 H34" stroke="#4A50C4" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- lineage nodes; the "now"/evidence node is amber -->
+  <circle cx="15" cy="13" r="2.4" fill="#4A50C4"/>
+  <circle cx="15" cy="35" r="2.4" fill="#4A50C4"/>
+  <circle cx="15" cy="24" r="3.1" fill="#F0B54A"/>
+</svg>

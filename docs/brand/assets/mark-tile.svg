@@ -1,0 +1,13 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="EPISTEMOS avatar">
+  <title>EPISTEMOS</title>
+  <rect width="128" height="128" rx="28" fill="#0B0E17"/>
+  <g transform="translate(40 34)">
+    <path d="M0 0 V60" stroke="#8B93FF" stroke-width="6" stroke-linecap="round"/>
+    <path d="M0 6 H34" stroke="#8B93FF" stroke-width="6" stroke-linecap="round"/>
+    <path d="M0 30 H48" stroke="#8B93FF" stroke-width="6" stroke-linecap="round"/>
+    <path d="M0 54 H36" stroke="#8B93FF" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="0" cy="6" r="4.5" fill="#8B93FF"/>
+    <circle cx="0" cy="54" r="4.5" fill="#8B93FF"/>
+    <circle cx="0" cy="30" r="6" fill="#F0B54A"/>
+  </g>
+</svg>

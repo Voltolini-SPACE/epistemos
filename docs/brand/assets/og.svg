@@ -1,0 +1,37 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="EPISTEMOS social card">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B0E17"/><stop offset="1" stop-color="#111527"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(980 130) rotate(130) scale(420)">
+      <stop stop-color="#4A50C4" stop-opacity="0.35"/><stop offset="1" stop-color="#4A50C4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <!-- faint strata field -->
+  <g opacity="0.08" stroke="#8B93FF" stroke-width="2">
+    <path d="M760 120 H1120"/><path d="M760 190 H1060"/><path d="M760 260 H1140"/>
+    <path d="M760 330 H1020"/><path d="M760 400 H1100"/><path d="M760 470 H1050"/>
+  </g>
+  <!-- mark -->
+  <g transform="translate(96 96)">
+    <path d="M0 0 V150" stroke="#8B93FF" stroke-width="14" stroke-linecap="round"/>
+    <path d="M0 12 H86" stroke="#8B93FF" stroke-width="14" stroke-linecap="round"/>
+    <path d="M0 75 H120" stroke="#8B93FF" stroke-width="14" stroke-linecap="round"/>
+    <path d="M0 138 H92" stroke="#8B93FF" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="0" cy="12" r="11" fill="#8B93FF"/><circle cx="0" cy="138" r="11" fill="#8B93FF"/>
+    <circle cx="0" cy="75" r="15" fill="#F0B54A"/>
+  </g>
+  <text x="96" y="330" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="84" font-weight="800" letter-spacing="6" fill="#EAECF4">EPISTEMOS</text>
+  <text x="98" y="392" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="30" font-weight="600" fill="#8B93FF">Sovereign Context, Memory &amp; Provenance for AI Agents</text>
+  <text x="98" y="470" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="23" font-weight="400" fill="#98A2BD">Bitemporal memory · tamper-evident provenance · explainable retrieval</text>
+  <text x="98" y="506" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="23" font-weight="400" fill="#98A2BD">Local-first · zero-egress · no mandatory LLM · zero runtime dependencies</text>
+  <!-- benchmark chip -->
+  <g transform="translate(98 548)">
+    <rect width="360" height="46" rx="23" fill="#151A28" stroke="#2A3350"/>
+    <circle cx="26" cy="23" r="5" fill="#F0B54A"/>
+    <text x="44" y="30" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#EAECF4">100k search: 6.2s → 34ms (~183×)</text>
+  </g>
+  <text x="1104" y="574" text-anchor="end" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20" fill="#565C6E">voltolini.space/epistemos</text>
+</svg>
