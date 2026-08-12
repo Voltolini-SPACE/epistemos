@@ -170,7 +170,25 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         self._route("POST")
 
+    def _drain_body(self) -> None:
+        """Consume any unread request body so a keep-alive connection stays framed.
+
+        Without this, an error before ``_body()`` leaves the POST payload in the socket and the
+        next request on the same connection is parsed starting mid-body — HTTP request smuggling
+        on a pipelined connection (EPISTEMOS-03, B-05)."""
+        try:
+            remaining = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self.close_connection = True
+            return
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
     def _route(self, method: str) -> None:
+        body_consumed = False
         try:
             parsed = urlparse(self.path)
             path = parsed.path.rstrip("/")
@@ -185,10 +203,16 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 self._send(404, {"error": "NotFound", "message": "no such route"})
                 return
-            body = self._body() if method == "POST" else {}
+            if method == "POST":
+                body = self._body()
+                body_consumed = True
+            else:
+                body = {}
             result = handler(engine, principal, query, body)
             self._send(200 if method == "GET" else 201 if path == "/facts" else 200, result)
         except Exception as exc:  # noqa: BLE001 - boundary maps all errors to HTTP
+            if method == "POST" and not body_consumed:
+                self._drain_body()
             self._fail(exc)
 
 

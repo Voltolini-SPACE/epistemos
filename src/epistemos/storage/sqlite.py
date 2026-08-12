@@ -297,6 +297,10 @@ class SQLiteStore(Store):
         consistent. Used by the "backup during writes" chaos test.
         """
         dest = str(dest_path)
+        # Fail fast instead of deadlocking: the online backup API would block on the store's own
+        # open write transaction (BEGIN IMMEDIATE) and spin on SQLITE_BUSY forever (LT-05).
+        if self._depth != 0:
+            raise StorageError("backup() cannot run inside an open store transaction")
         try:
             with self._lock:
                 target = sqlite3.connect(dest)

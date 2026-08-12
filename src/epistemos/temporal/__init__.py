@@ -15,7 +15,7 @@ combining :func:`believed_at` (transaction axis) with :func:`valid_at` (valid ax
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from .._util import now_utc, parse_instant
@@ -33,7 +33,13 @@ __all__ = [
 def instant_in_interval(
     instant: datetime, lo: str | datetime | None, hi: str | datetime | None
 ) -> bool:
-    """``lo <= instant < hi`` with ``None`` bounds treated as -inf / +inf."""
+    """``lo <= instant < hi`` with ``None`` bounds treated as -inf / +inf.
+
+    A naive ``instant`` is treated as UTC, matching :func:`valid_at`/:func:`believed_at` (which
+    accept naive datetimes) — this public helper must not raise where they do not (T-08).
+    """
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=UTC)
     lo_dt = parse_instant(lo)
     hi_dt = parse_instant(hi)
     after_lo = lo_dt is None or instant >= lo_dt

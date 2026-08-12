@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
 from .._util import Clock, canonical_json, hash_obj, new_id, now_utc, parse_instant, to_iso
@@ -73,6 +74,11 @@ _KIND_TO_CLS: dict[str, Any] = {
 }
 
 EXPORT_FORMAT = "epistemos-events"
+
+# Bound the projected corroboration/contradiction annotation lists so repeated (cross-agent)
+# confirm/contradict cannot grow an object's metadata past its cap (B-06). The ledger keeps the
+# full history; the object metadata keeps only the most recent N as a convenience projection.
+_MAX_ANNOTATIONS = 256
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,7 +319,10 @@ class Engine:
             obj["confidence"] = p["confidence"]
             corr = list(obj.get("metadata", {}).get("corroborations", []))
             corr.append({"source": p.get("source"), "ts": record.ts})
-            obj.setdefault("metadata", {})["corroborations"] = corr
+            # Bound the projected list so repeated cross-agent confirms cannot grow an object's
+            # metadata without limit (B-06). The full history stays in the ledger; this is only a
+            # convenience projection, so keeping the most recent N is lossless for the truth.
+            obj.setdefault("metadata", {})["corroborations"] = corr[-_MAX_ANNOTATIONS:]
             self._persist(obj)
         elif op == Op.CONTRADICTION_RECORDED:
             self._apply_contradiction(record, p, record.ts)
@@ -334,7 +343,7 @@ class Engine:
             if p.get("note"):
                 notes = list(obj.get("metadata", {}).get("contradiction_notes", []))
                 notes.append({"other": b, "note": p["note"], "ts": ts})
-                obj.setdefault("metadata", {})["contradiction_notes"] = notes
+                obj.setdefault("metadata", {})["contradiction_notes"] = notes[-_MAX_ANNOTATIONS:]
             self._persist(obj)
 
     def _apply_merge(self, record: LedgerRecord, p: dict[str, Any], ts: str) -> None:
@@ -845,7 +854,13 @@ class Engine:
         rows = self.store.facts(principal.tenant, principal.namespace, subject=subject)
         if predicate is not None:
             rows = [r for r in rows if r.get("predicate") == predicate]
-        rows.sort(key=lambda r: (str(r.get("tx_from")), str(r.get("valid_from") or "")))
+        # Order by real instants, not lexicographically over ISO strings: mixed UTC-offset forms
+        # (e.g. "...+05:00" vs "...Z") sort wrong as text (T-07). Undated facts sort first.
+        _floor = datetime.min.replace(tzinfo=UTC)
+        rows.sort(key=lambda r: (
+            parse_instant(r.get("tx_from")) or _floor,
+            parse_instant(r.get("valid_from")) or _floor,
+        ))
         out = []
         for r in rows:
             out.append(
