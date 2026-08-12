@@ -1516,7 +1516,7 @@ class Engine:
         """Assert a claim (a contribution, NOT truth). ``claimant`` defaults to the caller's agent
         but may name a distinct identity (human/service) on whose behalf the agent ingests it; the
         caller's agent is recorded as ``owner`` (the ingesting agent), and ``source`` is the
-        external origin — three separate identities (§3). PRIVATE by default; a ``space`` places it."""
+        external origin: three separate identities (§3). PRIVATE by default; ``space`` places it."""
         principal = _require_principal(principal)
         principal.require("claim.create")
         subject = self._str(subject, "subject")
@@ -1546,7 +1546,9 @@ class Engine:
             self._emit(principal, Op.CLAIM_ASSERTED, ts, claim.to_dict())
         return claim
 
-    def retract_claim(self, principal: Principal, claim_id: str, *, reason: str | None = None) -> None:
+    def retract_claim(
+        self, principal: Principal, claim_id: str, *, reason: str | None = None
+    ) -> None:
         """Withdraw a claim. History preserved; the claim remains, its belief becomes RETRACTED."""
         principal = _require_principal(principal)
         principal.require("claim.retract")
@@ -1627,7 +1629,7 @@ class Engine:
     ) -> Review:
         """Record ONE reviewer's individual assessment. Verdicts are preserved verbatim; majority
         is not truth (§9). Requires read access to the claim + capability (§17). Self-review is
-        allowed but disclosed (the reviewer == claimant is visible); it cannot itself accept (§32)."""
+        allowed but disclosed (reviewer == claimant is visible); it cannot itself accept (§32)."""
         principal = _require_principal(principal)
         Verdict(verdict)
         cap = {"confirm": "claim.confirm", "dispute": "claim.dispute"}.get(verdict, "claim.review")
@@ -1641,22 +1643,27 @@ class Engine:
         if rationale is not None:
             rationale = self._str(rationale, "rationale", max_len=self.limits.max_text)
         ts = self._now()
+        # a review inherits the claim's audience so its visibility tracks the claim exactly
         review = Review(
             **self._envelope(principal, "review", new_id("rev"), ts,
-                             spaces=tuple(claim.get("spaces", ()))),  # review inherits claim's audience
+                             spaces=tuple(claim.get("spaces", ()))),
             claim_id=claim_id, verdict=verdict, rationale=rationale, evidence_refs=refs,
         )
         with self.store.atomic():
             self._emit(principal, Op.CLAIM_REVIEWED, ts, review.to_dict())
         return review
 
-    def accept_claim(self, principal: Principal, claim_id: str, *, reason: str | None = None) -> None:
+    def accept_claim(
+        self, principal: Principal, claim_id: str, *, reason: str | None = None
+    ) -> None:
         """Governed acceptance of a claim as knowledge — a policy decision, NOT a vote (§18). Needs
         the ``knowledge.accept`` capability; the policy port decides. A claimant cannot accept their
         own claim (§32, DENY self-acceptance). History and any coexisting dispute are preserved."""
         self._govern(principal, claim_id, Op.CLAIM_ACCEPTED, "accept", reason)
 
-    def reject_claim(self, principal: Principal, claim_id: str, *, reason: str | None = None) -> None:
+    def reject_claim(
+        self, principal: Principal, claim_id: str, *, reason: str | None = None
+    ) -> None:
         """Governed rejection (mirror of accept). The claim remains on record (never deleted)."""
         self._govern(principal, claim_id, Op.CLAIM_REJECTED, "reject", reason)
 
@@ -1739,7 +1746,7 @@ class Engine:
             "ingested_by": claim.get("owner"),
             "source": self._scoped_source_view(principal, claim),
             "evidence": self.claim_evidence(principal, claim_id),
-            "reviews": self._readable_reviews_view(principal, claim_id),
+            "reviews": self._readable_reviews_view(principal, claim_id, claim.get("claimant")),
             "contradictions": list(claim.get("contradicts", [])),
             "belief": self.belief(principal, claim_id),
             "space": (claim.get("spaces") or [None])[0],
@@ -1748,11 +1755,15 @@ class Engine:
                          "status": claim.get("status")},
         }
 
-    def _readable_reviews_view(self, principal: Principal, claim_id: str) -> list[dict[str, Any]]:
+    def _readable_reviews_view(
+        self, principal: Principal, claim_id: str, claimant: str | None
+    ) -> list[dict[str, Any]]:
+        # self_review is DISCLOSED, not hidden (§ self-review is allowed with disclosure): a review
+        # authored by the claim's own claimant is flagged so belief can be read with that in mind.
         return [
             {"reviewer": r.get("owner"), "verdict": r.get("verdict"),
              "rationale": r.get("rationale"), "at": r.get("created_at"),
-             "self_review": r.get("owner") == r.get("claimant_of_review_target")}
+             "self_review": claimant is not None and r.get("owner") == claimant}
             for r in self._readable_reviews(principal, claim_id)
         ]
 

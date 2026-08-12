@@ -51,7 +51,8 @@ def derive_belief(
                "coexisting positions preserved; majority is not truth")
         return _r(BeliefState.DISPUTED, why, reviews)
     if confirms:
-        return _r(BeliefState.SUPPORTED, f"{len(confirms)} confirmation(s), no live dispute", reviews)
+        return _r(BeliefState.SUPPORTED,
+                  f"{len(confirms)} confirmation(s), no live dispute", reviews)
     return _r(BeliefState.PROPOSED, "no review yet", reviews)
 
 

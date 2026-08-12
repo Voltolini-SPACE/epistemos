@@ -24,7 +24,7 @@ is the ``owner`` of a Review. None are collapsed.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
 

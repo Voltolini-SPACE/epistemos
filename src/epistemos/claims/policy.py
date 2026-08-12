@@ -59,6 +59,7 @@ class LocalDefaultPolicy:
             return PolicyDecision(False, f"cannot accept a {status} claim")
         confirms = sum(1 for r in req.reviews if r.get("verdict") == "confirm")
         disputes = sum(1 for r in req.reviews if r.get("verdict") in ("dispute", "reject"))
+        tally = f"confirms={confirms}, disputes={disputes}"
         if req.action == "reject":
-            return PolicyDecision(True, f"rejected by policy (confirms={confirms}, disputes={disputes})")
-        return PolicyDecision(True, f"accepted by policy (confirms={confirms}, disputes={disputes})")
+            return PolicyDecision(True, f"rejected by policy ({tally})")
+        return PolicyDecision(True, f"accepted by policy ({tally})")
