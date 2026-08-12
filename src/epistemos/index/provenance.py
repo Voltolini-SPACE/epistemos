@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS prov_ref (
     PRIMARY KEY (obj_id, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_prov_ref_obj ON prov_ref(obj_id);
+-- The idempotency DELETE in record() keys on seq. Without this index it degrades to a full
+-- scan per event, which made rebuild_projection O(events^2): measured 4.5s -> 270s at 100k.
+CREATE INDEX IF NOT EXISTS idx_prov_ref_seq ON prov_ref(seq);
 """
 
 
