@@ -1,21 +1,41 @@
-"""Shared text helpers + a SAFE FTS query normalizer (EPISTEMOS-02).
+"""Shared text helpers + a SAFE FTS query normalizer (EPISTEMOS-02; unicode mode EPISTEMOS-03).
 
-The tokenizer is byte-for-byte the v0.1 tokenizer (`[A-Za-z0-9]+`, lowercased) so the legacy
-scan retriever and the FTS index agree on what a "term" is (semantic parity). The FTS content
-is indexed with SQLite's `ascii` tokenizer, whose token boundaries match this regex.
+Tokenization is a pluggable :class:`Tokenizer` so the legacy scan retriever and the FTS index
+always agree on what a "term" is (semantic parity — ADR-021). Two tokenizers ship:
 
-:func:`fts_match_query` turns arbitrary user text into a **safe** FTS5 MATCH string: each token
-is emitted as a double-quoted literal, so FTS5 operators (`AND`/`OR`/`NOT`/`NEAR`/`*`/`(`/`"`/`:`
+* :data:`ASCII` — the v0.1/v0.2 default: ``[A-Za-z0-9]+`` lowercased, matching SQLite's ``ascii``
+  FTS5 tokenizer. Non-ASCII content is not tokenized (a known limitation, ADR-017).
+* :data:`UNICODE` — EPISTEMOS-03 (ADR-023): unicode-aware, diacritic-folding. It tokenizes
+  **through SQLite's own ``unicode61 remove_diacritics 2`` tokenizer**, so the python scan and the
+  FTS index are byte-identical by construction — a pure-python approximation cannot match SQLite's
+  curated fold table (Cyrillic ё stays distinct, ñ folds to n, Hangul stays composed). ``sqlite3``
+  is stdlib, so this adds no third-party dependency.
+
+:func:`fts_match_query` turns arbitrary user text into a **safe** FTS5 MATCH string: each token is
+emitted as a double-quoted literal, so FTS5 operators (`AND`/`OR`/`NOT`/`NEAR`/`*`/`(`/`"`/`:`
 column filters) in user input are treated as *data*, never as query syntax. This closes FTS
-injection at the boundary.
+injection at the boundary regardless of tokenizer.
 """
 
 from __future__ import annotations
 
 import re
+import sqlite3
+import threading
 from typing import Any
 
-__all__ = ["tokens", "object_text", "fts_match_query", "MAX_QUERY_TERMS"]
+__all__ = [
+    "tokens",
+    "object_text",
+    "fts_match_query",
+    "MAX_QUERY_TERMS",
+    "Tokenizer",
+    "AsciiTokenizer",
+    "SqliteUnicodeTokenizer",
+    "ASCII",
+    "UNICODE",
+    "get_tokenizer",
+]
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 
@@ -24,10 +44,89 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 MAX_QUERY_TERMS = 64
 
 
-def tokens(text: str | None) -> list[str]:
-    if not text:
-        return []
-    return [t.lower() for t in _TOKEN_RE.findall(text)]
+class Tokenizer:
+    """Turns text into a list of lowercased terms. ``name`` labels the persisted choice;
+    ``fts_tokenize`` is the SQLite FTS5 ``tokenize=`` option the index must use to agree."""
+
+    name: str = "ascii"
+    fts_tokenize: str = "ascii"
+
+    def tokens(self, text: str | None) -> list[str]:  # pragma: no cover - abstract
+        raise NotImplementedError
+
+
+class AsciiTokenizer(Tokenizer):
+    name = "ascii"
+    fts_tokenize = "ascii"
+
+    def tokens(self, text: str | None) -> list[str]:
+        if not text:
+            return []
+        return [t.lower() for t in _TOKEN_RE.findall(text)]
+
+
+class SqliteUnicodeTokenizer(Tokenizer):
+    """Unicode-aware tokenizer that defers to SQLite so the scan and index agree exactly.
+
+    Uses a private in-memory FTS5 table + ``fts5vocab`` to read back the exact terms SQLite would
+    index. Order is reconstructed from the raw text (fts5vocab is unordered) so TF·IDF and phrase
+    positions in the scan match a natural reading. Thread-safe via an internal lock.
+    """
+
+    name = "unicode"
+    fts_tokenize = "unicode61 remove_diacritics 2"
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._conn: sqlite3.Connection | None = None
+
+    def _connection(self) -> sqlite3.Connection:
+        if self._conn is None:
+            conn = sqlite3.connect(":memory:", check_same_thread=False)
+            conn.execute(
+                f"CREATE VIRTUAL TABLE tok USING fts5(c, tokenize='{self.fts_tokenize}')"
+            )
+            # 'instance' vocab yields one row per token occurrence with its offset, so we read
+            # the exact terms, multiplicity and order SQLite itself produces — no python
+            # re-implementation of unicode61's fold table, which cannot be matched exactly.
+            conn.execute("CREATE VIRTUAL TABLE tok_i USING fts5vocab(tok, 'instance')")
+            self._conn = conn
+        return self._conn
+
+    def tokens(self, text: str | None) -> list[str]:
+        if not text:
+            return []
+        with self._lock:
+            conn = self._connection()
+            conn.execute("INSERT INTO tok(rowid, c) VALUES (1, ?)", (text,))
+            try:
+                rows = conn.execute("SELECT term FROM tok_i ORDER BY offset").fetchall()
+            finally:
+                conn.execute("DELETE FROM tok WHERE rowid = 1")
+        return [r[0] for r in rows]
+
+
+ASCII = AsciiTokenizer()
+UNICODE = SqliteUnicodeTokenizer()
+
+_BY_NAME: dict[str, Tokenizer] = {ASCII.name: ASCII, UNICODE.name: UNICODE}
+
+
+def get_tokenizer(name: str | Tokenizer) -> Tokenizer:
+    """Resolve a tokenizer by name (``"ascii"``/``"unicode"``) or pass one through."""
+    if isinstance(name, Tokenizer):
+        return name
+    try:
+        return _BY_NAME[name]
+    except KeyError:
+        raise ValueError(
+            f"unknown tokenizer {name!r} (known: {sorted(_BY_NAME)})"
+        ) from None
+
+
+def tokens(text: str | None, tokenizer: Tokenizer = ASCII) -> list[str]:
+    """Tokenize with the given tokenizer (default: ASCII, the v0.1/v0.2 behaviour)."""
+    return tokenizer.tokens(text)
 
 
 def object_text(obj: dict[str, Any]) -> str:
@@ -50,13 +149,14 @@ def object_text(obj: dict[str, Any]) -> str:
     return " ".join(str(p) for p in parts if p)
 
 
-def fts_match_query(text: str | None) -> str | None:
+def fts_match_query(text: str | None, tokenizer: Tokenizer = ASCII) -> str | None:
     """Build a safe FTS5 MATCH string from user text, or ``None`` if there are no terms.
 
     Tokens are re-quoted as literals and OR-combined (any-term recall, matching the v0.1
-    scorer). User-supplied FTS operators cannot escape the quoting.
+    scorer). User-supplied FTS operators cannot escape the quoting. The tokenizer must be the
+    same one the index was built with, or the quoted literals will not match indexed terms.
     """
-    toks = tokens(text)
+    toks = tokenizer.tokens(text)
     if not toks:
         return None
     # de-duplicate (preserve order) and cap to bound query cost; tokens are [A-Za-z0-9]+ so they

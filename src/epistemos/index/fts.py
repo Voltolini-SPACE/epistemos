@@ -19,14 +19,15 @@ from typing import Any
 
 from ..storage.sqlite import SQLiteStore
 from . import IndexHealth, LexicalIndex
-from .text import fts_match_query, object_text
+from .text import ASCII, Tokenizer, fts_match_query, object_text
 
 __all__ = ["SqliteFtsIndex"]
 
+# The FTS5 tokenizer is chosen at build time; the fts_map + rid mapping is tokenizer-independent.
 _SCHEMA = """
 CREATE VIRTUAL TABLE IF NOT EXISTS fts_idx USING fts5(
     content, obj_id UNINDEXED, tenant UNINDEXED, namespace UNINDEXED, kind UNINDEXED,
-    tokenize = 'ascii'
+    tokenize = {tokenize!r}
 );
 CREATE TABLE IF NOT EXISTS fts_map (obj_id TEXT PRIMARY KEY, rid INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_fts_map_rid ON fts_map(rid);
@@ -34,16 +35,17 @@ CREATE INDEX IF NOT EXISTS idx_fts_map_rid ON fts_map(rid);
 
 
 class SqliteFtsIndex(LexicalIndex):
-    def __init__(self, store: SQLiteStore) -> None:
+    def __init__(self, store: SQLiteStore, *, tokenizer: Tokenizer = ASCII) -> None:
         self._store = store
         self._conn = store._conn
         self._lock = store._lock
+        self._tokenizer = tokenizer
         self._state = IndexHealth.HEALTHY
         try:
             with self._lock:
-                self._conn.executescript(_SCHEMA)
+                self._conn.executescript(_SCHEMA.format(tokenize=tokenizer.fts_tokenize))
         except sqlite3.OperationalError:
-            # FTS5 not compiled into this SQLite build
+            # FTS5 not compiled into this SQLite build (or the tokenizer is unavailable)
             self._state = IndexHealth.UNAVAILABLE
 
     # -- mutation (called inside the store's transaction) --------------------
@@ -103,7 +105,7 @@ class SqliteFtsIndex(LexicalIndex):
     ) -> list[tuple[str, float]]:
         if self._state != IndexHealth.HEALTHY:
             raise RuntimeError(f"index not healthy: {self._state}")
-        match = fts_match_query(text)
+        match = fts_match_query(text, self._tokenizer)
         if match is None:
             return []
         sql = (
@@ -137,14 +139,38 @@ class SqliteFtsIndex(LexicalIndex):
         return self._state
 
     def ensure_built(self, store: Any = None) -> None:
-        """Cheap open-time guard: if the object count and index count disagree (e.g. opening a
-        pre-existing or v0.1 database), rebuild once so search is complete and HEALTHY."""
+        """Cheap open-time guard: rebuild once if the index does not match current state.
+
+        Rebuilds when the object count and index count disagree (opening a pre-existing/v0.1
+        database) OR when the persisted tokenizer differs from the requested one (the FTS5
+        table's ``tokenize=`` is fixed at CREATE, so a tokenizer change means drop + rebuild
+        with the new virtual table — ADR-023). The tokenizer name is recorded in ``meta``.
+        """
         if self._state == IndexHealth.UNAVAILABLE:
             return
         with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key = 'fts_tokenizer'"
+            ).fetchone()
+            stored = row[0] if row is not None else None
             obj_count = int(self._conn.execute("SELECT COUNT(*) FROM objects").fetchone()[0])
-        if obj_count != self.count():
+        if stored != self._tokenizer.name:
+            self._recreate_table()
             self.rebuild(store)
+            with self._lock:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO meta(key, value) VALUES ('fts_tokenizer', ?)",
+                    (self._tokenizer.name,),
+                )
+        elif obj_count != self.count():
+            self.rebuild(store)
+
+    def _recreate_table(self) -> None:
+        """Drop and recreate the FTS5 virtual table with the current tokenizer."""
+        with self._lock:
+            self._conn.execute("DROP TABLE IF EXISTS fts_idx")
+            self._conn.execute("DELETE FROM fts_map")
+            self._conn.executescript(_SCHEMA.format(tokenize=self._tokenizer.fts_tokenize))
 
     def mark_degraded(self) -> None:
         if self._state != IndexHealth.UNAVAILABLE:

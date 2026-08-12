@@ -36,6 +36,7 @@ from ..identity import require_principal as _require_principal
 from ..index import IndexHealth
 from ..index.fts import SqliteFtsIndex
 from ..index.provenance import SqliteProvenanceIndex
+from ..index.text import Tokenizer, get_tokenizer
 from ..ledger import GENESIS_HASH, Event, LedgerRecord, Op, seal, verify_chain
 from ..model import (
     SCHEMA_VERSION,
@@ -97,12 +98,17 @@ class Engine:
         clock: Clock = now_utc,
         retriever: Retriever | None = None,
         limits: EngineLimits | None = None,
+        tokenizer: str | Tokenizer = "ascii",
     ) -> None:
         self.store = store
         self.clock = clock
         self.limits = limits or EngineLimits()
         weights = retriever.weights if retriever is not None else None
-        self.legacy = LegacyScanRetriever(weights)
+        # Tokenizer selects how text is split for search. "ascii" (default) is the v0.1/v0.2
+        # behaviour; "unicode" (ADR-023) folds diacritics and indexes non-ASCII scripts, using
+        # SQLite as the single tokenization authority so the scan and index agree exactly.
+        self.tokenizer = get_tokenizer(tokenizer)
+        self.legacy = LegacyScanRetriever(weights, self.tokenizer)
         self.retriever = self.legacy  # back-compat attribute
         # A lexical index accelerates TEXT search on the SQLite backend (FTS5). The in-memory
         # backend keeps the O(N) scan (fine at test scale). The index is a rebuildable projection
@@ -113,9 +119,9 @@ class Engine:
         # (ADR-022). Like the lexical index it is a rebuildable projection with a scan fallback.
         self.provenance_index: SqliteProvenanceIndex | None = None
         if isinstance(store, SQLiteStore):
-            idx = SqliteFtsIndex(store)
+            idx = SqliteFtsIndex(store, tokenizer=self.tokenizer)
             self.lexical_index = idx
-            self.indexed = IndexedRetriever(idx, weights)
+            self.indexed = IndexedRetriever(idx, weights, self.tokenizer)
             idx.ensure_built(store)  # rebuild once if opening a pre-existing / unindexed DB
             prov = SqliteProvenanceIndex(store)
             self.provenance_index = prov
@@ -129,13 +135,19 @@ class Engine:
         clock: Clock = now_utc,
         weights: Weights | None = None,
         limits: EngineLimits | None = None,
+        tokenizer: str | Tokenizer = "ascii",
     ) -> Engine:
-        """Open an engine over a local file (SQLite) or ``None``/``":memory:"`` (in-memory)."""
+        """Open an engine over a local file (SQLite) or ``None``/``":memory:"`` (in-memory).
+
+        ``tokenizer="unicode"`` enables diacritic-folding, non-ASCII search (ADR-023); the FTS
+        index is rebuilt automatically if the stored tokenizer differs from the requested one.
+        """
         return cls(
             open_store(target),
             clock=clock,
             retriever=Retriever(weights),
             limits=limits,
+            tokenizer=tokenizer,
         )
 
     def close(self) -> None:

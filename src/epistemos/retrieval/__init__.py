@@ -22,7 +22,7 @@ from typing import Any
 
 from .._util import now_utc, parse_instant
 from ..index import LexicalIndex
-from ..index.text import object_text, tokens
+from ..index.text import ASCII, Tokenizer, object_text
 from ..storage import Store
 from ..temporal import believed_at, valid_at
 
@@ -156,8 +156,9 @@ def _build(store: Store, obj: dict[str, Any], total: float, comp: dict[str, floa
 
 
 class _BaseRetriever:
-    def __init__(self, weights: Weights | None = None) -> None:
+    def __init__(self, weights: Weights | None = None, tokenizer: Tokenizer = ASCII) -> None:
         self.weights = weights or Weights()
+        self.tokenizer = tokenizer
 
     def _total(self, comp: dict[str, float]) -> float:
         return float(sum(
@@ -192,7 +193,7 @@ class LegacyScanRetriever(_BaseRetriever):
         at_tx: str | datetime | None = None, at_valid: str | datetime | None = None,
     ) -> list[Retrieved]:
         now = now_utc()
-        query_terms = tokens(text)
+        query_terms = self.tokenizer.tokens(text)
         trust_of = self._trust_lookup(store)
 
         candidates: list[dict[str, Any]] = []
@@ -208,7 +209,7 @@ class LegacyScanRetriever(_BaseRetriever):
         df: dict[str, int] = {}
         doc_tokens: dict[str, list[str]] = {}
         for obj in candidates:
-            toks = tokens(object_text(obj))
+            toks = self.tokenizer.tokens(object_text(obj))
             doc_tokens[obj["id"]] = toks
             for term in set(toks):
                 df[term] = df.get(term, 0) + 1
@@ -247,8 +248,10 @@ def _tfidf(query_terms: list[str], doc_tokens: list[str], df: dict[str, int], n_
 # IndexedRetriever — FTS candidate set, same scoring/explainability
 # ---------------------------------------------------------------------------
 class IndexedRetriever(_BaseRetriever):
-    def __init__(self, index: LexicalIndex, weights: Weights | None = None) -> None:
-        super().__init__(weights)
+    def __init__(
+        self, index: LexicalIndex, weights: Weights | None = None, tokenizer: Tokenizer = ASCII
+    ) -> None:
+        super().__init__(weights, tokenizer)
         self.index = index
 
     def search(
@@ -262,7 +265,7 @@ class IndexedRetriever(_BaseRetriever):
         trust_of = self._trust_lookup(store)
 
         pairs: list[tuple[dict[str, Any], float]] = []
-        if text and tokens(text):
+        if text and self.tokenizer.tokens(text):
             for obj_id, lexical in self.index.search(
                 tenant, namespace, text, kinds=kinds, limit=CANDIDATE_POOL
             ):
