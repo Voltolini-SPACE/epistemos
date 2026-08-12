@@ -158,6 +158,17 @@ class SQLiteStore(Store):
             ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
+    def records_by_seq(self, seqs: list[int]) -> list[LedgerRecord]:
+        if not seqs:
+            return []
+        placeholders = ",".join("?" for _ in seqs)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT {_LEDGER_COLS} FROM ledger WHERE seq IN ({placeholders}) ORDER BY seq",
+                [int(s) for s in seqs],
+            ).fetchall()
+        return [self._row_to_record(r) for r in rows]
+
     def event_count(self) -> int:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) FROM ledger").fetchone()[0])

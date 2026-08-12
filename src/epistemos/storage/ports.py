@@ -63,6 +63,16 @@ class Store(ABC):
     @abstractmethod
     def read_events(self, since_seq: int = 0) -> list[LedgerRecord]: ...
 
+    def records_by_seq(self, seqs: list[int]) -> list[LedgerRecord]:
+        """Fetch specific sealed records by sequence number, ascending.
+
+        The default is a correct O(events) filter so every adapter works unchanged; a backend
+        that can index the ledger overrides it. Used by the provenance index (ADR-022) to turn
+        a whole-ledger scan into a keyed lookup — the *result* must be identical either way.
+        """
+        wanted = set(seqs)
+        return [r for r in self.read_events() if r.seq in wanted]
+
     @abstractmethod
     def event_count(self) -> int: ...
 

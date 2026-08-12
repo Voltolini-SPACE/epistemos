@@ -35,6 +35,7 @@ from ..identity import Principal
 from ..identity import require_principal as _require_principal
 from ..index import IndexHealth
 from ..index.fts import SqliteFtsIndex
+from ..index.provenance import SqliteProvenanceIndex
 from ..ledger import GENESIS_HASH, Event, LedgerRecord, Op, seal, verify_chain
 from ..model import (
     SCHEMA_VERSION,
@@ -108,11 +109,17 @@ class Engine:
         # of the authoritative store — never a source of truth.
         self.lexical_index: SqliteFtsIndex | None = None
         self.indexed: IndexedRetriever | None = None
+        # A provenance index turns explain()'s per-node ledger scan into a keyed lookup
+        # (ADR-022). Like the lexical index it is a rebuildable projection with a scan fallback.
+        self.provenance_index: SqliteProvenanceIndex | None = None
         if isinstance(store, SQLiteStore):
             idx = SqliteFtsIndex(store)
             self.lexical_index = idx
             self.indexed = IndexedRetriever(idx, weights)
             idx.ensure_built(store)  # rebuild once if opening a pre-existing / unindexed DB
+            prov = SqliteProvenanceIndex(store)
+            self.provenance_index = prov
+            prov.ensure_built()
 
     @classmethod
     def open(
@@ -194,6 +201,24 @@ class Engine:
             raise ValidationError("metadata nesting too deep")
         return dict(meta)
 
+    def _open_belief(self, principal: Principal, fact_id: str, *, action: str) -> dict[str, Any]:
+        """Load a fact that is still believed, refusing to re-close a closed belief.
+
+        Transaction time is append-only: once the system stopped believing a fact at ``tx_to``,
+        nothing may move that instant, or ``as_of(at_tx=T)`` would answer differently depending
+        on what happened after T (EPISTEMOS-03, A-12). Supersede the *current* generation.
+        """
+        old = self._ref_in_scope(principal, fact_id, what="fact")
+        if old.get("kind") != "fact":
+            raise ValidationError(f"{fact_id} is not a fact")
+        if old.get("tx_to") is not None:
+            raise ConflictError(
+                f"{action} denied: belief in {fact_id} is already closed at {old['tx_to']} "
+                f"(status {old.get('status')!r}); transaction time is append-only — "
+                "act on the fact that is currently believed"
+            )
+        return old
+
     def _ref_in_scope(self, principal: Principal, ref_id: str, *, what: str) -> dict[str, Any]:
         obj = self.store.get_object(ref_id)
         if obj is None:
@@ -257,14 +282,20 @@ class Engine:
         """Project a sealed ledger record onto queryable state. Shared by live + import."""
         op = record.op
         p = dict(record.payload)
+        if self.provenance_index is not None:
+            self.provenance_index.record(record.seq, p)
         if op in _PUT_OPS:
             self._guard_payload_scope(record, p)
             self._persist(p)
         elif op in (Op.FACT_SUPERSEDED, Op.FACT_RETRACTED):
             obj = self._in_record_scope(record, p["fact_id"], what="fact")
-            obj["tx_to"] = p["tx_to"]
-            obj["status"] = p["status"]
-            self._persist(obj)
+            # Append-only transaction time: the FIRST close stands. A ledger written before
+            # A-12 was fixed — or a crafted import — cannot move tx_to forward and thereby
+            # change what the system is said to have believed in the past.
+            if obj.get("tx_to") is None:
+                obj["tx_to"] = p["tx_to"]
+                obj["status"] = p["status"]
+                self._persist(obj)
         elif op == Op.FACT_CONFIRMED:
             obj = self._in_record_scope(record, p["fact_id"], what="fact")
             obj["confidence"] = p["confidence"]
@@ -503,9 +534,7 @@ class Engine:
         fact links back via ``supersedes``. Use for "we said X, it is actually Y"."""
         principal = _require_principal(principal)
         principal.require("supersede")
-        old = self._ref_in_scope(principal, fact_id, what="fact")
-        if old.get("kind") != "fact":
-            raise ValidationError(f"{fact_id} is not a fact")
+        old = self._open_belief(principal, fact_id, action="supersede")
         principal.guard_owner(old.get("owner", principal.agent), action="supersede")
         if reason is not None:
             reason = self._str(reason, "reason", max_len=self.limits.max_str)
@@ -562,9 +591,7 @@ class Engine:
         """
         principal = _require_principal(principal)
         principal.require("supersede")
-        old = self._ref_in_scope(principal, fact_id, what="fact")
-        if old.get("kind") != "fact":
-            raise ValidationError(f"{fact_id} is not a fact")
+        old = self._open_belief(principal, fact_id, action="correct_validity")
         principal.guard_owner(old.get("owner", principal.agent), action="correct_validity")
         def _pick(value: Any, current: Any, field: str) -> Any:
             return current if value is _UNSET else self._instant(value, field)
@@ -633,9 +660,7 @@ class Engine:
         """Withdraw belief entirely (no replacement). History is preserved."""
         principal = _require_principal(principal)
         principal.require("retract")
-        old = self._ref_in_scope(principal, fact_id, what="fact")
-        if old.get("kind") != "fact":
-            raise ValidationError(f"{fact_id} is not a fact")
+        old = self._open_belief(principal, fact_id, action="retract")
         principal.guard_owner(old.get("owner", principal.agent), action="retract")
         if reason is not None:
             reason = self._str(reason, "reason", max_len=self.limits.max_str)
@@ -1187,9 +1212,14 @@ class Engine:
             raise NotFoundError(f"{obj_id!r} not found")
         if obj.get("tenant") != principal.tenant or obj.get("namespace") != principal.namespace:
             raise NotFoundError(f"{obj_id!r} not found")
+        idx = self.provenance_index
         if obj.get("kind") == "decision":
-            return _explain_decision(self.store, principal.tenant, principal.namespace, obj_id)
-        return _explain_obj(self.store, principal.tenant, principal.namespace, obj_id, depth=depth)
+            return _explain_decision(
+                self.store, principal.tenant, principal.namespace, obj_id, index=idx
+            )
+        return _explain_obj(
+            self.store, principal.tenant, principal.namespace, obj_id, depth=depth, index=idx
+        )
 
     # ======================================================================
     # integrity, export/import, health, rebuild
@@ -1209,28 +1239,35 @@ class Engine:
         )
 
     def rebuild_projection(self) -> int:
-        """Rebuild all queryable state (and the lexical index) purely from the ledger."""
+        """Rebuild all queryable state (and every index) purely from the ledger."""
         with self.store.atomic():
             self.store.clear_projection()
             if self.lexical_index is not None:
                 self.lexical_index.clear()
+            if self.provenance_index is not None:
+                self.provenance_index.clear()
             count = 0
             for rec in self.store.read_events():
-                self._apply(rec)  # _apply -> _persist -> reindex rebuilds the index too
+                self._apply(rec)  # _apply -> _persist -> reindex rebuilds the indexes too
                 count += 1
         return count
 
     def verify_index_consistency(self) -> bool:
-        """True iff the lexical index matches the authoritative searchable-object set.
+        """True iff every index matches the authoritative state it projects.
 
         The scan backend (in-memory) is always consistent because it reads live state.
         """
-        if self.lexical_index is None:
-            return True
-        return self.lexical_index.verify(self.store)
+        ok = True
+        if self.lexical_index is not None:
+            ok = self.lexical_index.verify(self.store) and ok
+        if self.provenance_index is not None:
+            ok = self.provenance_index.verify(self.store) and ok
+        return ok
 
     def rebuild_index(self) -> int:
         """Drop and rebuild the lexical index from the authoritative store. Returns objects done."""
+        if self.provenance_index is not None:
+            self.provenance_index.rebuild(self.store)
         if self.lexical_index is None:
             return 0
         return self.lexical_index.rebuild(self.store)
@@ -1406,10 +1443,21 @@ class Engine:
                 "backend": "sqlite-fts5",
             }
             if verify:
-                index_info["consistent"] = self.verify_index_consistency()
+                index_info["consistent"] = self.lexical_index.verify(self.store)
             info["index"] = index_info
         else:
             info["index"] = {"state": str(IndexHealth.UNAVAILABLE), "backend": "scan"}
+        if self.provenance_index is not None:
+            prov_info: dict[str, Any] = {
+                "state": str(self.provenance_index.health()),
+                "count": self.provenance_index.count(),
+                "backend": "sqlite-prov-ref",
+            }
+            if verify:
+                prov_info["consistent"] = self.provenance_index.verify(self.store)
+            info["provenance_index"] = prov_info
+        else:
+            info["provenance_index"] = {"state": str(IndexHealth.UNAVAILABLE), "backend": "scan"}
         if principal is not None:
             principal = _require_principal(principal)
             info["scope"] = {"tenant": principal.tenant, "namespace": principal.namespace}

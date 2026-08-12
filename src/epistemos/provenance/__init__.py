@@ -37,24 +37,44 @@ def _refs_id(value: Any, obj_id: str) -> bool:
     return False
 
 
-def _activities_for(store: Store, tenant: str, namespace: str, obj_id: str) -> list[dict[str, Any]]:
-    """Ledger events (PROV activities) whose payload references ``obj_id``."""
-    acts = []
-    for rec in store.read_events():
-        if rec.tenant != tenant or rec.namespace != namespace:
-            continue
-        if _refs_id(rec.payload, obj_id):
-            acts.append(
-                {
-                    "seq": rec.seq,
-                    "op": rec.op,
-                    "ts": rec.ts,
-                    "actor": rec.actor,
-                    "principal": rec.principal,
-                    "entry_hash": rec.entry_hash,
-                }
-            )
-    return acts
+def _activity_view(rec: Any) -> dict[str, Any]:
+    return {
+        "seq": rec.seq,
+        "op": rec.op,
+        "ts": rec.ts,
+        "actor": rec.actor,
+        "principal": rec.principal,
+        "entry_hash": rec.entry_hash,
+    }
+
+
+def _activities_for(
+    store: Store, tenant: str, namespace: str, obj_id: str, *, index: Any = None
+) -> list[dict[str, Any]]:
+    """Ledger events (PROV activities) whose payload references ``obj_id``.
+
+    The authoritative answer is a full ledger scan. When a healthy provenance index can answer
+    for this id it is used instead — it returns the same rows in the same order, in O(refs)
+    rather than O(events) (ADR-022). Any index problem falls back to the scan, so a broken
+    index costs latency, never completeness.
+    """
+    if index is not None and index.usable_for(obj_id):
+        try:
+            seqs = index.seqs_for(obj_id)
+        except Exception:  # noqa: BLE001 - never let the index break an explanation
+            index.mark_degraded()
+        else:
+            acts = []
+            for rec in store.records_by_seq(seqs):
+                if rec.tenant != tenant or rec.namespace != namespace:
+                    continue
+                acts.append(_activity_view(rec))
+            return acts
+    return [
+        _activity_view(rec)
+        for rec in store.read_events()
+        if rec.tenant == tenant and rec.namespace == namespace and _refs_id(rec.payload, obj_id)
+    ]
 
 
 def _source_view(store: Store, source_id: str | None) -> dict[str, Any] | None:
@@ -71,6 +91,39 @@ def _source_view(store: Store, source_id: str | None) -> dict[str, Any] | None:
     }
 
 
+def _superseded_by(
+    store: Store, tenant: str, namespace: str, obj_id: str, *, index: Any = None
+) -> list[str]:
+    """Reverse edge: the facts that list ``obj_id`` in their ``supersedes``.
+
+    Same contract as :func:`_activities_for` — the scan over all facts is authoritative, the
+    index is an accelerator that must produce an identical answer.
+    """
+    if index is not None and index.usable_for(obj_id):
+        try:
+            seqs = index.seqs_for(obj_id)
+        except Exception:  # noqa: BLE001
+            index.mark_degraded()
+        else:
+            out = []
+            for rec in store.records_by_seq(seqs):
+                if rec.tenant != tenant or rec.namespace != namespace:
+                    continue
+                payload = rec.payload
+                if (
+                    isinstance(payload, dict)
+                    and payload.get("kind") == "fact"
+                    and obj_id in (payload.get("supersedes") or ())
+                ):
+                    out.append(str(payload["id"]))
+            return out
+    return [
+        f["id"]
+        for f in store.objects(tenant, namespace, kind="fact")
+        if obj_id in f.get("supersedes", [])
+    ]
+
+
 def explain(
     store: Store,
     tenant: str,
@@ -78,6 +131,7 @@ def explain(
     obj_id: str,
     *,
     depth: int = 3,
+    index: Any = None,
     _seen: set[str] | None = None,
 ) -> dict[str, Any]:
     """Produce the genealogy of an object as a bounded, cycle-safe tree.
@@ -119,11 +173,12 @@ def explain(
         }
 
     node["source"] = _source_view(store, obj.get("source"))
-    node["activities"] = _activities_for(store, tenant, namespace, obj_id)
+    node["activities"] = _activities_for(store, tenant, namespace, obj_id, index=index)
 
     def _walk(ids: list[str]) -> list[dict[str, Any]]:
         return [
-            explain(store, tenant, namespace, ref, depth=depth - 1, _seen=seen) for ref in ids
+            explain(store, tenant, namespace, ref, depth=depth - 1, index=index, _seen=seen)
+            for ref in ids
         ]
 
     node["derived_from"] = _walk(list(obj.get("derived_from", [])))
@@ -132,18 +187,14 @@ def explain(
         node["contradicts"] = list(obj.get("contradicts", []))
 
     # reverse edge: what supersedes THIS object
-    superseded_by = [
-        f["id"]
-        for f in store.objects(tenant, namespace, kind="fact")
-        if obj_id in f.get("supersedes", [])
-    ]
+    superseded_by = _superseded_by(store, tenant, namespace, obj_id, index=index)
     if superseded_by:
         node["superseded_by"] = superseded_by
     return node
 
 
 def explain_decision(
-    store: Store, tenant: str, namespace: str, decision_id: str
+    store: Store, tenant: str, namespace: str, decision_id: str, *, index: Any = None
 ) -> dict[str, Any]:
     """Evidence and dependencies behind a decision (mission §11: WHAT EVIDENCE LED TO THIS?)."""
     dec = store.get_object(decision_id)
@@ -152,7 +203,8 @@ def explain_decision(
     if dec.get("tenant") != tenant or dec.get("namespace") != namespace:
         return {"id": decision_id, "status": "out_of_scope"}
     evidence = [
-        explain(store, tenant, namespace, ev_id, depth=2) for ev_id in dec.get("evidence", [])
+        explain(store, tenant, namespace, ev_id, depth=2, index=index)
+        for ev_id in dec.get("evidence", [])
     ]
     return {
         "id": decision_id,
@@ -161,5 +213,5 @@ def explain_decision(
         "reversible": dec.get("reversible"),
         "alternatives": list(dec.get("alternatives", [])),
         "evidence": evidence,
-        "activities": _activities_for(store, tenant, namespace, decision_id),
+        "activities": _activities_for(store, tenant, namespace, decision_id, index=index),
     }
