@@ -233,12 +233,18 @@ class _PanelHandler(BaseHTTPRequestHandler):
         srv = self._srv()
         if path == "/api/demo/identities":
             return {"identities": srv.demo_identities}  # empty unless launched with --demo
-        principal = self._principal()
-        p = srv.panel
         if path == "/api/whoami":
-            return {"tenant": principal.tenant, "agent": principal.agent,
+            # a non-erroring auth probe: 200 {authenticated:false} when there is no session, so the
+            # first page load never logs a 401 in the console (ZERO_CONSOLE_ERRORS) while staying
+            # fail-closed — every DATA endpoint below still requires a valid principal.
+            if not self._token():
+                return {"authenticated": False}
+            principal = self._principal()
+            return {"authenticated": True, "tenant": principal.tenant, "agent": principal.agent,
                     "namespace": principal.namespace,
                     "capabilities": sorted(principal.capabilities)}
+        principal = self._principal()
+        p = srv.panel
         if path == "/api/overview":
             return p.overview(principal)
         if path == "/api/counts":

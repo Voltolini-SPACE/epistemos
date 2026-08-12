@@ -84,8 +84,11 @@ export class GraphCanvas {
   _reheat() {
     this.alpha = 1;
     if (prefersReducedMotion()) {
-      // no animation: settle synchronously in a bounded number of ticks, render once
-      for (let i = 0; i < 140 && this.alpha > 0.02; i++) this._tick();
+      // No animation: settle synchronously, but under a TIME BUDGET so a large graph never blocks
+      // the main thread for seconds (layout quality degrades gracefully at scale, never the UI).
+      const budgetMs = 350, t0 = performance.now();
+      let i = 0;
+      while (this.alpha > 0.02 && i < 300 && performance.now() - t0 < budgetMs) { this._tick(); i++; }
       this.alpha = 0; this._render();
     } else if (!this._raf) {
       this._raf = requestAnimationFrame(this._loop);

@@ -105,7 +105,11 @@ export async function graph(ctx) {
   const kinds = [...new Set(data.nodes.map((n) => n.kind))];
   const hud = el("div", { class: "graph-hud" },
     el("span", { class: "chip", dataset: { on: "1" }, text: `${data.nodes.length} nodes` }),
-    el("span", { class: "chip", text: `${data.edges.length} edges` }));
+    el("span", { class: "chip", text: `${data.edges.length} edges` }),
+    data.truncated ? el("span", { class: "chip", dataset: { on: "1" },
+      style: "color:var(--amber); border-color:rgba(240,181,74,.4)",
+      title: "The authorized graph exceeds the render cap; showing the first slice. Focus a node to explore a neighbourhood.",
+      text: "⚠ capped" }) : null);
   const hidden = new Set();
   for (const k of kinds) {
     const chip = el("button", { class: "chip", dataset: { on: "1" } }, kindDot(k));

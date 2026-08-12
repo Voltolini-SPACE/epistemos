@@ -236,8 +236,11 @@ async function login() {
 
 // ---------- boot ----------
 async function boot() {
-  try { app.whoami = await api.whoami(); }
-  catch (e) { if (e.status === 401) return login(); throw e; }
+  try {
+    const who = await api.whoami();
+    if (!who.authenticated) return login();  // non-erroring probe (no 401 in the console)
+    app.whoami = who;
+  } catch (e) { if (e.status === 401) return login(); throw e; }
   if (!document.querySelector(".shell")) {
     buildShell();
     window.addEventListener("hashchange", route);

@@ -347,10 +347,18 @@ class PanelService:
         return h
 
     def search(self, principal: Principal, **kw: Any) -> dict[str, Any]:
-        """Typed search passthrough — the core's ``search`` is already candidate-boundary-first."""
+        """Typed search — the core's ``search`` is candidate-boundary-first (only authorized hits).
+        Each hit is enriched with its object's human label; a hit whose object is not readable is
+        dropped defensively (it should never occur, but the boundary never trusts an id blindly)."""
         principal = _require(principal)
-        results = self._engine.search(principal, **kw)
-        return {"results": [self._project_hit(r) for r in results]}
+        out = []
+        for r in self._engine.search(principal, **kw):
+            obj = self._engine.store.get_object(r.get("id", ""))
+            if obj is None or not self._engine.is_readable(principal, obj):
+                continue  # defense-in-depth: never label/serialize an unreadable object
+            out.append({"id": obj["id"], "kind": obj.get("kind"), "label": _label(obj),
+                        "score": r.get("score"), "space": (obj.get("spaces") or [None])[0]})
+        return {"results": out}
 
     # -- projection / helpers (redaction) -----------------------------------
     def _project_node(self, principal: Principal, o: dict[str, Any]) -> dict[str, Any]:
@@ -372,10 +380,6 @@ class PanelService:
         elif kind == "fact":
             node["believed"] = o.get("tx_to") is None
         return node
-
-    def _project_hit(self, r: dict[str, Any]) -> dict[str, Any]:
-        return {"id": r.get("id"), "kind": r.get("kind"), "label": _label(r),
-                "score": r.get("score"), "space": (r.get("spaces") or [None])[0]}
 
     def _readable_spaces(self, principal: Principal) -> list[dict[str, Any]]:
         """Spaces the caller may see: owner, or member, or ORGANIZATION+ (org-wide visible)."""
