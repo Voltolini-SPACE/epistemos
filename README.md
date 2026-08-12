@@ -24,9 +24,12 @@ agent framework, vector database or graph database.
 
 ## Status
 
-**`v0.4.0` — developer preview.** Clean-room, not a fork or submodule of any system.
-Adds **Knowledge Spaces** + capability-based authorization (private-by-default, share by
-permission). Adversarially audited, **780 tests**, mutation **32/32** killed, ruff + mypy
+**`v0.5.0` — developer preview.** Clean-room, not a fork or submodule of any system.
+Adds **Collaborative Claims** — verifiable epistemology where *contribution ≠ truth*: claims,
+typed evidence and individual reviews are first-class, **belief is derived (never a stored
+boolean)** and acceptance is **governed** through a pluggable policy port (default offline, no
+LLM). Builds on **Knowledge Spaces** + capability authorization (private-by-default, share by
+permission). Adversarially audited, **855 tests**, mutation **39/39** killed, ruff + mypy
 `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the full gate matrix.
 
 **Measured, reproducible** (`benchmarks/`):
@@ -150,7 +153,12 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 
 - `docs/research/` — competitor census, feature harvest, final research report
 - `docs/spec/` — [core data model](docs/spec/CORE_MODEL.md), [memory model](docs/spec/MEMORY_MODEL.md)
-- `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-015)
+- `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-029)
+- `docs/spaces/` — [Knowledge Spaces](docs/spaces/KNOWLEDGE_SPACE_MODEL.md) & capability model (v0.4)
+- `docs/claims/` — [claim](docs/claims/CLAIM_MODEL.md) / [evidence](docs/claims/EVIDENCE_MODEL.md) /
+  [review](docs/claims/REVIEW_MODEL.md) / [belief](docs/claims/BELIEF_MODEL.md) models,
+  [visibility composition](docs/claims/VISIBILITY_COMPOSITION.md),
+  [threat model](docs/claims/THREAT_MODEL.md), [API](docs/claims/API_MODEL.md) (v0.5)
 - `docs/security/` — [threat model](docs/security/THREAT_MODEL.md), license matrix, SBOM, zero-egress,
   mutation report
 - `docs/benchmarks/` — [reproducible benchmark](docs/benchmarks/RESULTS.md) methodology and results
@@ -173,6 +181,21 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 > [`docs/EPISTEMOS_V0_3_FINAL_REPORT.md`](docs/EPISTEMOS_V0_3_FINAL_REPORT.md),
 > [`docs/audit/EPISTEMOS_V0_2_AUDIT.md`](docs/audit/EPISTEMOS_V0_2_AUDIT.md), and
 > [`docs/collaboration/`](docs/collaboration/COLLABORATIVE_KNOWLEDGE_MODEL.md).
+>
+> **v0.4 (KNOWLEDGE SPACES)** adds a visibility lattice (`PRIVATE < TEAM < ORGANIZATION <
+> COMMUNITY < PUBLIC`) orthogonal to tenant, capability-based authorization, and a
+> candidate-boundary-first read firewall, so a user can share *selected* knowledge without
+> exposing the rest (`PRIVATE_TO_PUBLIC_LEAK = 0`). ADR-024…026.
+>
+> **v0.5 (COLLABORATIVE CLAIMS)** makes *contribution ≠ truth* concrete: a **Claim** exists whether
+> or not it is believed; **Evidence** attaches with a typed relation (supports/contradicts/
+> weakens/derived_from); **Reviews** are individual and preserved (majority is not truth);
+> **belief is derived**, never stored; and acceptance is **governed** by a pluggable policy port
+> (default local & offline — NOMOS-pluggable, never a dependency). Claims/evidence/reviews respect
+> the same space firewall (`CLAIM/EVIDENCE/REVIEW_SPACE_LEAK = 0`), and a public claim never
+> exposes private evidence (§15). 855 tests, mutation 39/39. See
+> [`docs/EPISTEMOS_V0_5_FINAL_REPORT.md`](docs/EPISTEMOS_V0_5_FINAL_REPORT.md), `docs/claims/`,
+> ADR-028…029.
 
 ## License
 

@@ -29,3 +29,5 @@
 | [025](ADR-025-capability-authorization.md) | Capability-based authorization; roles are capability sets (v0.4) |
 | [026](ADR-026-authorized-retrieval.md) | Authorized retrieval: candidate-boundary-first read firewall (v0.4) |
 | [027](ADR-027-mit-license.md) | Relicense to MIT (v0.4) |
+| [028](ADR-028-collaborative-claims.md) | Collaborative claims: a claim graph distinct from the knowledge graph (v0.5) |
+| [029](ADR-029-derived-belief-governed-acceptance.md) | Belief is derived; acceptance is governed via a policy port (v0.5) |
