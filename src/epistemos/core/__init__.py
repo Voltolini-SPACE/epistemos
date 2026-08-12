@@ -1550,12 +1550,15 @@ class Engine:
         if not self._can_read(principal, obj):  # provenance space isolation (§15/§19)
             raise NotFoundError(f"{obj_id!r} not found")
         idx = self.provenance_index
+        can_read = lambda o: self._can_read(principal, o)  # noqa: E731 - elide unreadable lineage
         if obj.get("kind") == "decision":
             return _explain_decision(
-                self.store, principal.tenant, principal.namespace, obj_id, index=idx
+                self.store, principal.tenant, principal.namespace, obj_id, index=idx,
+                can_read=can_read,
             )
         return _explain_obj(
-            self.store, principal.tenant, principal.namespace, obj_id, depth=depth, index=idx
+            self.store, principal.tenant, principal.namespace, obj_id, depth=depth, index=idx,
+            can_read=can_read,
         )
 
     # ======================================================================

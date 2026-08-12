@@ -14,6 +14,7 @@ the activities that touched the object — so the genealogy is auditable, not as
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ..storage import Store
@@ -138,12 +139,16 @@ def explain(
     *,
     depth: int = 3,
     index: Any = None,
+    can_read: Callable[[dict[str, Any]], bool] | None = None,
     _seen: set[str] | None = None,
 ) -> dict[str, Any]:
     """Produce the genealogy of an object as a bounded, cycle-safe tree.
 
     Scope is enforced by the caller (engine); this function only reads within
-    ``(tenant, namespace)``.
+    ``(tenant, namespace)``. ``can_read`` additionally applies the Knowledge Spaces firewall
+    (EPISTEMOS-04): a genealogy node the caller may not read is **elided** — its content
+    (statement, source, activities) never appears — so provenance cannot leak a private ancestor
+    of a shared object.
     """
     seen = _seen if _seen is not None else set()
     obj = store.get_object(obj_id)
@@ -151,6 +156,9 @@ def explain(
         return {"id": obj_id, "status": "missing"}
     if obj.get("tenant") != tenant or obj.get("namespace") != namespace:
         # Never cross a scope boundary while walking provenance.
+        return {"id": obj_id, "status": "out_of_scope"}
+    if can_read is not None and not can_read(obj):
+        # Space firewall: reveal only that a node exists in the lineage, never its content.
         return {"id": obj_id, "status": "out_of_scope"}
     if obj_id in seen or depth < 0:
         return {"id": obj_id, "kind": obj.get("kind"), "status": "elided_cycle_or_depth"}
@@ -183,7 +191,8 @@ def explain(
 
     def _walk(ids: list[str]) -> list[dict[str, Any]]:
         return [
-            explain(store, tenant, namespace, ref, depth=depth - 1, index=index, _seen=seen)
+            explain(store, tenant, namespace, ref, depth=depth - 1, index=index,
+                    can_read=can_read, _seen=seen)
             for ref in ids
         ]
 
@@ -200,7 +209,8 @@ def explain(
 
 
 def explain_decision(
-    store: Store, tenant: str, namespace: str, decision_id: str, *, index: Any = None
+    store: Store, tenant: str, namespace: str, decision_id: str, *, index: Any = None,
+    can_read: Callable[[dict[str, Any]], bool] | None = None,
 ) -> dict[str, Any]:
     """Evidence and dependencies behind a decision (mission §11: WHAT EVIDENCE LED TO THIS?)."""
     dec = store.get_object(decision_id)
@@ -209,7 +219,7 @@ def explain_decision(
     if dec.get("tenant") != tenant or dec.get("namespace") != namespace:
         return {"id": decision_id, "status": "out_of_scope"}
     evidence = [
-        explain(store, tenant, namespace, ev_id, depth=2, index=index)
+        explain(store, tenant, namespace, ev_id, depth=2, index=index, can_read=can_read)
         for ev_id in dec.get("evidence", [])
     ]
     return {
