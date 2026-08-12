@@ -137,7 +137,7 @@ function buildShell() {
   const main = el("main", { class: "main", id: "main", role: "main", tabindex: "-1" });
   const shell = el("div", { class: "shell" },
     el("div", { class: "brand" }, el("div", { class: "logo" }),
-      el("span", { class: "name", html: "EPISTEM<b>O</b>S" })),
+      el("span", { class: "name" }, "EPISTEM", el("b", {}, "O"), "S")),
     el("header", { class: "topbar" }, searchBtn, el("span", { class: "spacer" }),
       connEl(), el("span", { class: "chip", id: "who", text: app.whoami?.agent || "" })),
     sidebar, main);
@@ -219,7 +219,7 @@ async function login() {
   };
   const err = el("div", { style: "color:var(--danger); font-size:12px; margin-top:8px" });
   box.append(el("div", { class: "row" }, el("div", { class: "logo", style: "width:26px;height:26px" }),
-    el("h2", { html: "EPISTEM<b style='color:var(--amber)'>O</b>S" })),
+    el("h2", {}, "EPISTEM", el("b", { style: "color:var(--amber)" }, "O"), "S")),
     el("div", { class: "sub", style: "color:var(--fg-3); margin-bottom:12px", text: "Living Knowledge Interface" }));
   const demo = await api.demoIdentities().catch(() => ({ identities: [] }));
   if (demo.identities?.length) {
