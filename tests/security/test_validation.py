@@ -60,14 +60,21 @@ def test_s47_hash_contract_deterministic_and_distinct() -> None:
 
 
 def test_s48_import_takes_data_not_paths() -> None:
-    from epistemos.errors import SchemaError
+    from epistemos.errors import IntegrityError, SchemaError
     from epistemos.storage import MemoryStore
 
     eng = Engine(MemoryStore())
-    # a malformed record (missing hashes) is rejected, not silently trusted
-    with pytest.raises(SchemaError):
+    # A record missing its hashes carries no chain to verify: refused as an integrity
+    # failure, not silently trusted (EPISTEMOS-03 sharpened this from SchemaError, which
+    # under-described the problem).
+    with pytest.raises(IntegrityError, match="no verifiable hash chain"):
         eng.import_events({"format": "epistemos-events", "schema_version": 1,
                            "events": [{"seq": 1, "op": "x"}]})
+    # A record that presents chain fields but is structurally malformed is a schema failure.
+    with pytest.raises(SchemaError):
+        eng.import_events({"format": "epistemos-events", "schema_version": 1,
+                           "events": [{"seq": 1, "op": "x", "content_hash": "a",
+                                       "prev_hash": "b", "entry_hash": "c"}]})
 
 
 def test_s12_oversized_document(engine: Engine, ctx: Principal) -> None:

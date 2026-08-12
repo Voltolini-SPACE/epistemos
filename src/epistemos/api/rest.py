@@ -241,7 +241,9 @@ def _timeline(
 def _export(
     engine: Engine, principal: Principal, q: dict[str, str], body: dict[str, Any]
 ) -> dict[str, Any]:
-    return engine.export()
+    # Always scope-limited: the caller's token decides what it may read. A whole-store export
+    # (scope='all') additionally requires the 'admin' capability, enforced by the Engine.
+    return engine.export(principal, scope="all" if q.get("scope") == "all" else "principal")
 
 
 _RouteHandler = Callable[[Engine, Principal, dict[str, str], dict[str, Any]], dict[str, Any]]

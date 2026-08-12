@@ -24,6 +24,7 @@ from typing import Any, Literal, overload
 
 from .._util import Clock, canonical_json, hash_obj, new_id, now_utc, parse_instant, to_iso
 from ..errors import (
+    AuthorizationError,
     ConflictError,
     IntegrityError,
     NotFoundError,
@@ -34,7 +35,7 @@ from ..identity import Principal
 from ..identity import require_principal as _require_principal
 from ..index import IndexHealth
 from ..index.fts import SqliteFtsIndex
-from ..ledger import Event, LedgerRecord, Op, verify_chain
+from ..ledger import GENESIS_HASH, Event, LedgerRecord, Op, seal, verify_chain
 from ..model import (
     SCHEMA_VERSION,
     BeliefStatus,
@@ -232,42 +233,57 @@ class Engine:
             except Exception:  # noqa: BLE001 - the core write must never depend on the index
                 self.lexical_index.mark_degraded()
 
+    # -- scope authority ----------------------------------------------------
+    # The sealed record header is the ONLY authority for (tenant, namespace). Payload-level
+    # scope fields are attacker-controlled on the import path: a hand-built export whose chain
+    # is internally valid could otherwise project objects into any tenant (EPISTEMOS-03, A-01).
+    def _guard_payload_scope(self, record: LedgerRecord, obj: dict[str, Any]) -> None:
+        if obj.get("tenant") != record.tenant or obj.get("namespace") != record.namespace:
+            raise IntegrityError(
+                f"ledger seq {record.seq}: payload scope "
+                f"{obj.get('tenant')!r}/{obj.get('namespace')!r} does not match the sealed "
+                f"record scope {record.tenant!r}/{record.namespace!r}"
+            )
+
+    def _in_record_scope(self, record: LedgerRecord, obj_id: str, *, what: str) -> dict[str, Any]:
+        """Load an object a record mutates, refusing to cross the record's own scope."""
+        obj = self.store.get_object(obj_id)
+        if obj is None:
+            raise IntegrityError(f"projection: missing {what} {obj_id} for {record.op}")
+        self._guard_payload_scope(record, obj)
+        return obj
+
     def _apply(self, record: LedgerRecord) -> None:
         """Project a sealed ledger record onto queryable state. Shared by live + import."""
         op = record.op
         p = dict(record.payload)
         if op in _PUT_OPS:
+            self._guard_payload_scope(record, p)
             self._persist(p)
         elif op in (Op.FACT_SUPERSEDED, Op.FACT_RETRACTED):
-            obj = self.store.get_object(p["fact_id"])
-            if obj is None:
-                raise IntegrityError(f"projection: missing fact {p['fact_id']} for {op}")
+            obj = self._in_record_scope(record, p["fact_id"], what="fact")
             obj["tx_to"] = p["tx_to"]
             obj["status"] = p["status"]
             self._persist(obj)
         elif op == Op.FACT_CONFIRMED:
-            obj = self.store.get_object(p["fact_id"])
-            if obj is None:
-                raise IntegrityError(f"projection: missing fact {p['fact_id']} for confirm")
+            obj = self._in_record_scope(record, p["fact_id"], what="fact")
             obj["confidence"] = p["confidence"]
             corr = list(obj.get("metadata", {}).get("corroborations", []))
             corr.append({"source": p.get("source"), "ts": record.ts})
             obj.setdefault("metadata", {})["corroborations"] = corr
             self._persist(obj)
         elif op == Op.CONTRADICTION_RECORDED:
-            self._apply_contradiction(p, record.ts)
+            self._apply_contradiction(record, p, record.ts)
         elif op == Op.ENTITY_MERGED:
-            self._apply_merge(p, record.ts)
+            self._apply_merge(record, p, record.ts)
         elif op == Op.ENTITY_SPLIT:
-            self._apply_split(p)
+            self._apply_split(record, p)
         else:  # pragma: no cover - defensive
             raise IntegrityError(f"unknown ledger op {op!r}")
 
-    def _apply_contradiction(self, p: dict[str, Any], ts: str) -> None:
+    def _apply_contradiction(self, record: LedgerRecord, p: dict[str, Any], ts: str) -> None:
         for a, b in ((p["fact_id"], p["other_id"]), (p["other_id"], p["fact_id"])):
-            obj = self.store.get_object(a)
-            if obj is None:
-                raise IntegrityError(f"projection: missing fact {a} for contradiction")
+            obj = self._in_record_scope(record, a, what="fact")
             contradicts = list(obj.get("contradicts", []))
             if b not in contradicts:
                 contradicts.append(b)
@@ -278,10 +294,8 @@ class Engine:
                 obj.setdefault("metadata", {})["contradiction_notes"] = notes
             self._persist(obj)
 
-    def _apply_merge(self, p: dict[str, Any], ts: str) -> None:
-        canonical = self.store.get_object(p["canonical"])
-        if canonical is None:
-            raise IntegrityError(f"projection: missing canonical entity {p['canonical']}")
+    def _apply_merge(self, record: LedgerRecord, p: dict[str, Any], ts: str) -> None:
+        canonical = self._in_record_scope(record, p["canonical"], what="canonical entity")
         aliases = list(canonical.get("aliases", []))
         for a in p.get("aliases", []):
             if a not in aliases:
@@ -292,21 +306,18 @@ class Engine:
         canonical.setdefault("metadata", {})["merged_from"] = merged
         self._persist(canonical)
         for dup_id in p["duplicates"]:
-            dup = self.store.get_object(dup_id)
-            if dup is None:
-                raise IntegrityError(f"projection: missing duplicate entity {dup_id}")
+            dup = self._in_record_scope(record, dup_id, what="duplicate entity")
             dup.setdefault("metadata", {})["merged_into"] = p["canonical"]
             dup["metadata"]["merged_at"] = ts
             self._persist(dup)
 
-    def _apply_split(self, p: dict[str, Any]) -> None:
-        origin = self.store.get_object(p["entity"])
-        if origin is None:
-            raise IntegrityError(f"projection: missing entity {p['entity']} for split")
+    def _apply_split(self, record: LedgerRecord, p: dict[str, Any]) -> None:
+        origin = self._in_record_scope(record, p["entity"], what="entity")
         into_ids = [e["id"] for e in p["into"]]
         origin.setdefault("metadata", {})["split_into"] = into_ids
         self._persist(origin)
         for ent in p["into"]:
+            self._guard_payload_scope(record, ent)
             self._persist(ent)
 
     def _envelope(
@@ -1224,15 +1235,77 @@ class Engine:
             return 0
         return self.lexical_index.rebuild(self.store)
 
-    def export(self) -> dict[str, Any]:
-        """Full, versioned, human-readable export of the tamper-evident ledger."""
-        events = [_record_to_dict(r) for r in self.store.read_events()]
+    def export(
+        self, principal: Principal | None = None, *, scope: str = "principal"
+    ) -> dict[str, Any]:
+        """Versioned, human-readable export of the tamper-evident ledger.
+
+        * ``principal=None`` — whole-store export for the **in-process library caller**, who
+          already holds the database file. Unchanged v0.1 behaviour.
+        * ``principal`` given (the only form any remote boundary may use) — a **scope-limited**
+          export of that principal's ``(tenant, namespace)``. Filtering a hash chain breaks its
+          linkage, so the scoped slice is **re-sealed** into a fresh, self-consistent chain: it
+          verifies and re-imports, but its entry hashes are new (flagged by ``resealed``).
+        * ``scope="all"`` with a principal — whole-store export, gated on ``admin``.
+
+        Before EPISTEMOS-03 this method took no principal, so REST's ``GET /export`` handed any
+        authenticated caller every tenant's complete history (A-11).
+        """
+        if principal is None:
+            events = [_record_to_dict(r) for r in self.store.read_events()]
+            return {
+                "format": EXPORT_FORMAT,
+                "schema_version": SCHEMA_VERSION,
+                "exported_at": self._now(),
+                "event_count": len(events),
+                "events": events,
+            }
+
+        principal = _require_principal(principal)
+        principal.require("export")
+        if scope not in ("principal", "all"):
+            raise ValidationError(f"unknown export scope {scope!r}")
+        if scope == "all":
+            if "admin" not in principal.capabilities:
+                raise AuthorizationError(
+                    "whole-store export requires the 'admin' capability; "
+                    "omit scope='all' for a scope-limited export"
+                )
+            events = [_record_to_dict(r) for r in self.store.read_events()]
+            return {
+                "format": EXPORT_FORMAT,
+                "schema_version": SCHEMA_VERSION,
+                "exported_at": self._now(),
+                "event_count": len(events),
+                "events": events,
+                "scope": {"tenant": None, "namespace": None},
+            }
+
+        selected = [
+            r for r in self.store.read_events()
+            if r.tenant == principal.tenant and r.namespace == principal.namespace
+        ]
+        resealed: list[dict[str, Any]] = []
+        prev = GENESIS_HASH
+        for seq, rec in enumerate(selected, start=1):
+            sealed = seal(
+                seq=seq,
+                event=Event(
+                    op=rec.op, ts=rec.ts, tenant=rec.tenant, namespace=rec.namespace,
+                    actor=rec.actor, principal=rec.principal, payload=rec.payload,
+                ),
+                prev_hash=prev,
+            )
+            prev = sealed.entry_hash
+            resealed.append(_record_to_dict(sealed))
         return {
             "format": EXPORT_FORMAT,
             "schema_version": SCHEMA_VERSION,
             "exported_at": self._now(),
-            "event_count": len(events),
-            "events": events,
+            "event_count": len(resealed),
+            "events": resealed,
+            "scope": {"tenant": principal.tenant, "namespace": principal.namespace},
+            "resealed": True,
         }
 
     def import_events(
@@ -1254,6 +1327,16 @@ class Engine:
         if self.store.event_count() != 0:
             raise ConflictError("import target store is not empty")
 
+        # An export with no chain fields cannot be verified at all. Say so plainly instead of
+        # failing later with a confusing "malformed record" — and never treat "nothing to
+        # check" as "checked and fine".
+        if verify and not _carries_chain(payload.get("events", [])):
+            raise IntegrityError(
+                "export carries no verifiable hash chain (missing seq/content_hash/"
+                "prev_hash/entry_hash); pass verify=False to import it as UNVERIFIED — "
+                "the result is trusted input, not tamper-evident history"
+            )
+
         version = int(payload.get("schema_version", -1))
         if version != SCHEMA_VERSION:
             if not migrate:
@@ -1263,6 +1346,12 @@ class Engine:
                 )
             from ..schema import migrate_export
 
+            # Verify the chain AS RECEIVED, before migration reshapes payloads and invalidates
+            # the original content hashes. Before EPISTEMOS-03 the migrate path re-sealed
+            # whatever it was handed without ever verifying it, so `migrate=True` silently
+            # disabled tamper-evidence (A-02).
+            if verify:
+                verify_chain([_dict_to_record(e) for e in payload.get("events", [])])
             payload = migrate_export(payload)
             return self._reseal_import(payload.get("events", []))
 
@@ -1297,9 +1386,13 @@ class Engine:
             "schema_version": SCHEMA_VERSION,
             "event_count": self.store.event_count(),
             "head_hash": head.entry_hash if head is not None else None,
-            "integrity_ok": True,
+            # Unverified is reported as unknown (None), never as True: before EPISTEMOS-03 a
+            # corrupted ledger reported integrity_ok=True simply because nobody checked (A-06).
+            "integrity_verified": bool(verify),
+            "integrity_ok": None,
         }
         if verify:
+            info["integrity_ok"] = True
             try:
                 self.verify_integrity()
             except IntegrityError as exc:
@@ -1339,6 +1432,18 @@ _PUT_OPS = frozenset(
         Op.EPISODE_RECORDED,
     }
 )
+
+
+_CHAIN_FIELDS = ("seq", "content_hash", "prev_hash", "entry_hash")
+
+
+def _carries_chain(events: Any) -> bool:
+    """True iff every event presents the fields :func:`verify_chain` needs."""
+    if not isinstance(events, list) or not events:
+        return True  # an empty export is vacuously verifiable
+    return all(
+        isinstance(e, dict) and all(f in e for f in _CHAIN_FIELDS) for e in events
+    )
 
 
 def _json_depth(obj: Any, current: int = 0) -> int:

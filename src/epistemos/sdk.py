@@ -65,7 +65,9 @@ class LocalClient:
         return self._engine.health(self._p)
 
     def export(self) -> dict[str, Any]:
-        return self._engine.export()
+        # Scope-limited, matching RemoteClient: an SDK client is a principal, not the
+        # database owner, so it must not receive other tenants' events (A-11).
+        return self._engine.export(self._p)
 
 
 class RemoteClient:
