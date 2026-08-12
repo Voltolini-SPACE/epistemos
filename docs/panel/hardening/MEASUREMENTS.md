@@ -36,9 +36,39 @@ Root cause of safety: `MemoryStore` serializes every op under an `RLock` and sna
 `objects()`/`read_events()` under the lock; SQLite serializes under a connection lock. Panel reads
 are therefore consistent under `ThreadingHTTPServer`. Regression: `tests/panel/test_concurrency.py`.
 
-## Performance characteristic (feeds §15)
+## Performance (§15)
 
-`/api/graph`, `/api/counts`, `/api/overview` enumerate **all** authorized objects (`is_readable` per
-object) → **O(N)** in corpus size, then cap the graph at 1500 nodes. This is the dominant cost for
-large corpora and the main input to the performance gate. Ledger tail (`read_events(since_seq)`) is
-O(N) on `MemoryStore` (full-list filter) and an indexed range scan on SQLite.
+Read-model latency (in-process `PanelService`, median of 15 reps, ms), realistic mixed corpus
+(~70% claims, evidence, sources, reviews):
+
+| op | 100 | 1,000 | 10,000 |
+|---|--:|--:|--:|
+| counts | 0.78 | 8.3 | 96.7 |
+| overview | 1.79 | 13.9 | 134.6 |
+| graph | 0.82 | 8.2 | 85.9 |
+| as_of | 0.52 | 5.6 | 52.0 |
+| list_claims | 0.38 | 3.5 | 41.8 |
+| search | 0.77 | 7.7 | 88.2 |
+| claim_detail | 0.64 | 6.5 | 74.6 |
+| activity | 0.65 | 2.6 | 2.4 |
+
+**Optimization applied this mission.** The aggregate views (`counts`/`overview`/`graph`/`as_of`/
+`agents`/`sources`) previously scanned the store **once per kind** (7 passes, 7× `json.loads` per
+object). `_readable_by_kinds` does one bucketed pass. Measured at 10k objects:
+
+| op | before | after | speedup |
+|---|--:|--:|--:|
+| counts | 317 ms | 97 ms | 3.3× |
+| overview | 363 ms | 135 ms | 2.7× |
+| graph | 298 ms | 86 ms | 3.5× |
+| as_of | 274 ms | 52 ms | 5.3× |
+
+Semantics are unchanged (same firewall, same objects), pinned by
+`tests/panel/test_readmodel_perf_equiv.py`.
+
+**Residual characteristic.** Everything except `activity` (bounded to 200 events) remains **O(N)** in
+authorized-corpus size — the firewall must evaluate `is_readable` per object *before* any limit, so
+an authorized count/graph cannot short-circuit. At ≤1k objects the panel is snappy (<15 ms); at 10k
+the heaviest view is ~135 ms. Beyond ~10k, a per-principal authorized index (cached read-model)
+would be the next step — flagged as future work, not a v1 blocker. Ledger tail
+(`read_events(since_seq)`) is O(N) on `MemoryStore` and an indexed range scan on SQLite.

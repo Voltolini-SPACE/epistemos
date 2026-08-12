@@ -74,6 +74,22 @@ class PanelService:
         eng = self._engine
         return [o for o in self._candidates(principal, kind) if eng.is_readable(principal, o)]
 
+    def _readable_by_kinds(
+        self, principal: Principal, kinds: Iterable[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Authorized objects for several kinds in a SINGLE store pass (one ``objects()`` scan, one
+        ``is_readable`` per object) instead of one full scan per kind. Same firewall, ~Nx less work
+        for the aggregate views (counts/graph/as_of/agents/sources). Performance only — no semantic
+        change: an object still appears iff ``is_readable`` passes."""
+        eng = self._engine
+        want = set(kinds)
+        out: dict[str, list[dict[str, Any]]] = {k: [] for k in want}
+        for o in self._engine.store.objects(principal.tenant, principal.namespace):
+            k = o.get("kind")
+            if k in want and eng.is_readable(principal, o):
+                out[k].append(o)
+        return out
+
     # -- listings -----------------------------------------------------------
     def list_objects(
         self, principal: Principal, *, kind: str, limit: int = 50, offset: int = 0
@@ -100,7 +116,7 @@ class PanelService:
         """Authorized counts across kinds + belief tallies. Every number counts only objects the
         caller may read, so a counter can never reveal a hidden object (``PRIVATE_UI_LEAK = 0``)."""
         principal = _require(principal)
-        by_kind = {k: self._readable_of_kind(principal, k) for k in GRAPH_KINDS}
+        by_kind = self._readable_by_kinds(principal, GRAPH_KINDS)
         spaces = self._readable_spaces(principal)
         # belief tally over readable claims + readable reviews (single pass, derive_belief order)
         reviews_by_claim: dict[str, list[str]] = {}
@@ -149,13 +165,16 @@ class PanelService:
         iff BOTH endpoints are readable (ADR-032). ``focus`` keeps a node + its N-hop neighbors."""
         principal = _require(principal)
         want = set(kinds) if kinds else set(GRAPH_KINDS)
-        # readable node set, keyed by id
+        cap = min(int(limit), _MAX_NODES)
+        # readable node set, keyed by id — one store pass across all wanted kinds
         nodes: dict[str, dict[str, Any]] = {}
-        for k in want:
-            for o in self._readable_of_kind(principal, k):
+        for rows in self._readable_by_kinds(principal, want).values():
+            for o in rows:
                 nodes[o["id"]] = o
-                if len(nodes) >= min(int(limit), _MAX_NODES):
+                if len(nodes) >= cap:
                     break
+            if len(nodes) >= cap:
+                break
         edges = self._edges_among(principal, nodes)
         truncated = len(nodes) >= min(int(limit), _MAX_NODES)
         if focus:
@@ -327,9 +346,10 @@ class PanelService:
         principal = _require(principal)
         want = set(kinds) if kinds else set(GRAPH_KINDS)
         asof = _asof_state(self._engine.store, at_tx)
+        cap = min(int(limit), _MAX_NODES)
         nodes: dict[str, dict[str, Any]] = {}
-        for k in want:
-            for o in self._readable_of_kind(principal, k):
+        for rows in self._readable_by_kinds(principal, want).values():
+            for o in rows:
                 # existence as-of at_tx: a creation event for this object must precede at_tx. Both
                 # the object's tx_from and the ledger creation record are required (the ledger is
                 # authoritative; tx_from is unchanged by later mutation — a safe cross-check).
@@ -337,8 +357,10 @@ class PanelService:
                 if not (tx_from and str(tx_from) <= at_tx and o["id"] in asof.existed):
                     continue
                 nodes[o["id"]] = o
-                if len(nodes) >= min(int(limit), _MAX_NODES):
+                if len(nodes) >= cap:
                     break
+            if len(nodes) >= cap:
+                break
         edges = self._edges_asof(nodes, asof)
         return {"at_tx": at_tx,
                 "nodes": [self._project_node_asof(o, asof) for o in nodes.values()],
@@ -379,17 +401,18 @@ class PanelService:
     def agents(self, principal: Principal) -> dict[str, Any]:
         """Agents actually observed in readable objects/events — never a fabricated integration."""
         principal = _require(principal)
-        by_kind = {k: self._readable_of_kind(principal, k) for k in GRAPH_KINDS}
+        by_kind = self._readable_by_kinds(principal, GRAPH_KINDS)
         stats = self._observed_agents(principal, by_kind)
         return {"agents": sorted(stats.values(), key=lambda a: -a["objects"])}
 
     def sources(self, principal: Principal) -> dict[str, Any]:
         """Sources with trust + usage. Trust is source AUTHORITY, never a truth score (§21)."""
         principal = _require(principal)
-        srcs = self._readable_of_kind(principal, "source")
+        grouped = self._readable_by_kinds(principal, ("source", "fact", "claim", "evidence"))
+        srcs = grouped["source"]
         usage: dict[str, int] = {}
         for k in ("fact", "claim", "evidence"):
-            for o in self._readable_of_kind(principal, k):
+            for o in grouped[k]:
                 sid = o.get("source")
                 if sid:
                     usage[sid] = usage.get(sid, 0) + 1
