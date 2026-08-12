@@ -1283,6 +1283,12 @@ class Engine:
             for rec in self.store.read_events():
                 self._apply(rec)  # _apply -> _persist -> reindex rebuilds the indexes too
                 count += 1
+        # The indexes were just rebuilt from authoritative state, so a previously DEGRADED index
+        # is healthy again — restore it, or search would fall back to the O(N) scan forever (LT-07).
+        if self.lexical_index is not None and self.lexical_index.verify(self.store):
+            self.lexical_index.restore_healthy()
+        if self.provenance_index is not None and self.provenance_index.verify(self.store):
+            self.provenance_index.restore_healthy()
         return count
 
     def verify_index_consistency(self) -> bool:
@@ -1468,26 +1474,24 @@ class Engine:
             except IntegrityError as exc:
                 info["integrity_ok"] = False
                 info["integrity_error"] = str(exc)
-        # lexical index state (EPISTEMOS-02): explicit, never hidden
+        # lexical index state (EPISTEMOS-02): explicit, never hidden. verify() may DOWNGRADE the
+        # state (content drift -> DEGRADED), so run it BEFORE reading the reported state, or
+        # health could claim HEALTHY alongside consistent=False (LT-02).
         if self.lexical_index is not None:
-            index_info: dict[str, Any] = {
-                "state": str(self.lexical_index.health()),
-                "count": self.lexical_index.count(),
-                "backend": "sqlite-fts5",
-            }
+            index_info: dict[str, Any] = {"count": self.lexical_index.count(),
+                                          "backend": "sqlite-fts5"}
             if verify:
                 index_info["consistent"] = self.lexical_index.verify(self.store)
+            index_info["state"] = str(self.lexical_index.health())
             info["index"] = index_info
         else:
             info["index"] = {"state": str(IndexHealth.UNAVAILABLE), "backend": "scan"}
         if self.provenance_index is not None:
-            prov_info: dict[str, Any] = {
-                "state": str(self.provenance_index.health()),
-                "count": self.provenance_index.count(),
-                "backend": "sqlite-prov-ref",
-            }
+            prov_info: dict[str, Any] = {"count": self.provenance_index.count(),
+                                         "backend": "sqlite-prov-ref"}
             if verify:
                 prov_info["consistent"] = self.provenance_index.verify(self.store)
+            prov_info["state"] = str(self.provenance_index.health())
             info["provenance_index"] = prov_info
         else:
             info["provenance_index"] = {"state": str(IndexHealth.UNAVAILABLE), "backend": "scan"}

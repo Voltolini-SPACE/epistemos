@@ -135,6 +135,11 @@ class SqliteProvenanceIndex:
         if self._state != IndexHealth.UNAVAILABLE:
             self._state = IndexHealth.DEGRADED
 
+    def restore_healthy(self) -> None:
+        """Return a DEGRADED index to HEALTHY after a rebuild from authoritative state."""
+        if self._state != IndexHealth.UNAVAILABLE:
+            self._state = IndexHealth.HEALTHY
+
     def ensure_built(self) -> None:
         """Rebuild once if the index does not cover every referencing event (e.g. opening a
         v0.1/v0.2 database that predates this index)."""

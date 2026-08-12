@@ -163,7 +163,12 @@ class SqliteFtsIndex(LexicalIndex):
                     (self._tokenizer.name,),
                 )
         elif obj_count != self.count():
-            self.rebuild(store)
+            # Cheap check disagreed — but objects with no searchable text (e.g. an empty
+            # observation) are legitimately unindexed, so obj_count > index count is expected.
+            # Only rebuild if the *searchable* set really differs, so a single empty object does
+            # not force a full rebuild on every open (B-06).
+            if len(self._searchable_ids()) != self.count():
+                self.rebuild(store)
 
     def _recreate_table(self) -> None:
         """Drop and recreate the FTS5 virtual table with the current tokenizer."""
@@ -175,6 +180,12 @@ class SqliteFtsIndex(LexicalIndex):
     def mark_degraded(self) -> None:
         if self._state != IndexHealth.UNAVAILABLE:
             self._state = IndexHealth.DEGRADED
+
+    def restore_healthy(self) -> None:
+        """Return a DEGRADED index to HEALTHY after it has been rebuilt from authoritative state.
+        A no-op if the backend is UNAVAILABLE (there is nothing to be healthy about)."""
+        if self._state != IndexHealth.UNAVAILABLE:
+            self._state = IndexHealth.HEALTHY
 
     def _searchable_ids(self) -> set[str]:
         import json
@@ -191,13 +202,36 @@ class SqliteFtsIndex(LexicalIndex):
     def verify(self, store: Any = None) -> bool:
         if self._state == IndexHealth.UNAVAILABLE:
             return False
+        import json
+
         with self._lock:
-            indexed = {r[0] for r in self._conn.execute("SELECT obj_id FROM fts_map").fetchall()}
+            mapping = {
+                r[0]: r[1]
+                for r in self._conn.execute("SELECT obj_id, rid FROM fts_map").fetchall()
+            }
             map_count = int(self._conn.execute("SELECT COUNT(*) FROM fts_map").fetchone()[0])
             idx_count = int(self._conn.execute("SELECT COUNT(*) FROM fts_idx").fetchone()[0])
-        # detect both mapping drift (fts_map vs authoritative) and content drift (fts_idx rows
-        # deleted/corrupted while the mapping remains)
-        ok = (indexed == self._searchable_ids()) and (map_count == idx_count)
+            content = {
+                r[0]: r[1]
+                for r in self._conn.execute("SELECT rowid, content FROM fts_idx").fetchall()
+            }
+            rows = self._conn.execute("SELECT json FROM objects").fetchall()
+        # 1. mapping drift: the indexed id set must equal the authoritative searchable set, and
+        #    the map/idx row counts must agree.
+        searchable = {}
+        for (blob,) in rows:
+            obj = json.loads(blob)
+            text = object_text(obj)
+            if text:
+                searchable[obj["id"]] = text
+        ok = (set(mapping) == set(searchable)) and (map_count == idx_count)
+        # 2. content drift: each mapped row's indexed content must still equal the object's text.
+        #    Catches a corrupted/rewritten content cell that leaves the mapping intact (B-01).
+        if ok:
+            for obj_id, rid in mapping.items():
+                if content.get(rid) != searchable.get(obj_id):
+                    ok = False
+                    break
         if not ok and self._state == IndexHealth.HEALTHY:
             self._state = IndexHealth.DEGRADED
         return ok

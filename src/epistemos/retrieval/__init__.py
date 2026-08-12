@@ -22,7 +22,7 @@ from typing import Any
 
 from .._util import now_utc, parse_instant
 from ..index import LexicalIndex
-from ..index.text import ASCII, Tokenizer, object_text
+from ..index.text import ASCII, MAX_QUERY_TERMS, Tokenizer, object_text
 from ..storage import Store
 from ..temporal import believed_at, valid_at
 
@@ -181,6 +181,17 @@ class _BaseRetriever:
             for k, v in comp.items() if hasattr(self.weights, k)
         ))
 
+    def _query_terms(self, text: str | None) -> list[str]:
+        """Distinct query terms, capped at ``MAX_QUERY_TERMS``. The cap bounds cost on BOTH
+        paths: the FTS path already caps in ``fts_match_query``; the scan must cap here too, or a
+        1 MiB query becomes a 100k-term TF·IDF loop over every candidate (B-03)."""
+        seen: dict[str, None] = {}
+        for t in self.tokenizer.tokens(text):
+            seen.setdefault(t, None)
+            if len(seen) >= MAX_QUERY_TERMS:
+                break
+        return list(seen)
+
     def _trust_lookup(self, store: Store) -> Any:
         # authority must not read trust across a scope boundary: a cross-tenant source pointer
         # contributes zero authority, never the foreign source's trust (B-06).
@@ -203,7 +214,7 @@ class LegacyScanRetriever(_BaseRetriever):
         at_tx: str | datetime | None = None, at_valid: str | datetime | None = None,
     ) -> list[Retrieved]:
         now = now_utc()
-        query_terms = self.tokenizer.tokens(text)
+        query_terms = self._query_terms(text)
         trust_of = self._trust_lookup(store)
 
         candidates: list[dict[str, Any]] = []
