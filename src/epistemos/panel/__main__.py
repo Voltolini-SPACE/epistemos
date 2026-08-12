@@ -35,17 +35,19 @@ def _live_demo(engine: Engine, ids: object) -> None:  # pragma: no cover - backg
     from .demo import _NS, _TENANT  # noqa: PLC0415
 
     feed = Principal(tenant=_TENANT, agent="demo-feed", namespace=_NS, capabilities=_DEFAULT_CAPS)
-    # find the shared research space by reading it back through the demo id map
     space_id = getattr(ids, "research", None)
+    subjects = ["Company X", "Company Y", "Company Z", "Market", "Sector"]
+    preds = ["signal", "guidance", "sentiment", "exposure", "trend"]
+    objs = ["upgraded", "downgraded", "stable", "volatile", "expanding"]
     n = 0
     while True:
-        time.sleep(9.0)
+        time.sleep(13.0)
         try:
-            claim = engine.create_claim(
-                feed, subject="Market", predicate="signal", object=f"observation #{n}",
-                space=space_id)
+            s, p, o = subjects[n % 5], preds[(n // 5) % 5], objs[(n * 3) % 5]
+            claim = engine.create_claim(feed, subject=s, predicate=p, object=f"{o} ({n})",
+                                        space=space_id)
             ev = engine.create_evidence(feed, evidence_kind="observation",
-                                        title=f"sensor reading {n}", uri=f"sensor://{n}",
+                                        title=f"telemetry {s} #{n}", uri=f"sensor://{s}/{n}",
                                         space=space_id)
             engine.attach_evidence(feed, evidence_id=ev.id, to_claim=claim.id, relation="supports")
             n += 1

@@ -270,14 +270,16 @@ export async function timeline(ctx) {
   travelBtn.addEventListener("click", async () => {
     const at = atInput.value ? new Date(atInput.value).toISOString() : new Date().toISOString();
     const snap = await guard(() => api.asof(at));
-    const banner = el("div", { class: "card", style: "margin-top:12px; border-color: rgba(240,181,74,.4)" },
-      el("div", { class: "row" }, el("span", { class: "timepill", text: "⏳ TIME TRAVEL · " + at.slice(0, 19) }),
+    const old = view.querySelector(".travel-banner"); if (old) old.remove();
+    const banner = el("div", { class: "card travel-banner", style: "margin:12px 0; border-color: rgba(240,181,74,.5); background: rgba(240,181,74,.06)" },
+      el("div", { class: "row" }, el("span", { class: "timepill", text: "⏳ TIME TRAVEL · viewing " + at.slice(0, 19) }),
         el("span", { style: "flex:1" }),
-        el("button", { class: "btn ghost", text: "return to live", onclick: () => { banner.remove(); } })),
+        el("button", { class: "btn ghost", text: "✕ return to live", onclick: () => { banner.remove(); } })),
       snap.__err ? errState(snap.__err) :
         el("div", { style: "margin-top:10px" }, el("div", { class: "sub", style: "color:var(--fg-2)",
-          text: `As of ${at.slice(0, 19)}, you could see ${snap.nodes.length} objects and ${snap.edges.length} relations.` })));
-    view.append(banner);
+          text: `As of ${at.slice(0, 19)}, EPISTEMOS knew ${snap.nodes.length} objects and ${snap.edges.length} relations that you are authorized to read. Objects asserted after this instant are not shown.` })));
+    view.insertBefore(banner, view.children[1]); // right below the header
+    banner.scrollIntoView({ block: "nearest" });
   });
   return view;
 }
