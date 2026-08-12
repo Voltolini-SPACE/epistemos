@@ -80,6 +80,22 @@ eng.as_of(ctx, "2026-01-15", subject="Alice", predicate="works_at")  # -> "X" (s
 eng.explain(ctx, f.id)                                     # -> provenance genealogy
 ```
 
+## Panel — the Living Knowledge Interface
+
+The official operational UI: a **local-first, zero-egress** web panel that turns the engine into a
+live, explorable experience — a Canvas knowledge-graph explorer, global search + `⌘K` command palette,
+a Claim Center with belief **decomposition**, Timeline + **Time Travel** (real bitemporal), Spaces,
+Agents, Sources, and System Health, updating live over SSE. It is a *consumer*: authorization stays in
+the core, the browser grants nothing, and a strict `default-src 'self'` CSP keeps it zero-egress.
+Pure stdlib + vanilla JS — no framework, no npm, no CDN.
+
+```bash
+python -m epistemos.panel --demo        # real demo corpus, opens http://127.0.0.1:8787/
+```
+
+See [`docs/panel/`](docs/panel/ARCHITECTURE.md) and
+[`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md).
+
 ## Architecture
 
 ```

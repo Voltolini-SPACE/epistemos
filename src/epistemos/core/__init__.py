@@ -1811,6 +1811,23 @@ class Engine:
     # ======================================================================
     # retrieval & explanation
     # ======================================================================
+    def is_readable(self, principal: Principal, obj: dict[str, Any]) -> bool:
+        """Public authorization predicate: may ``principal`` READ ``obj``? (panel boundary, ADR-30).
+
+        The single decision the API/event boundary uses to gate every listing, graph node/edge,
+        metric, timeline entry and stream event before it is serialized to a consumer. It is exactly
+        the internal read decision (``IDENTITY→TENANT→SPACE→CAPABILITY→POLICY``, fail closed) — the
+        boundary never re-implements authorization, so the UI cannot widen it. ``obj`` is a raw
+        object dict (as returned by ``store.objects``/``store.get_object``); a non-dict is not
+        readable.
+        """
+        principal = _require_principal(principal)
+        if not isinstance(obj, dict):
+            return False
+        if obj.get("tenant") != principal.tenant or obj.get("namespace") != principal.namespace:
+            return False
+        return self._can_read(principal, obj)
+
     def get(self, principal: Principal, obj_id: str) -> Any:
         principal = _require_principal(principal)
         principal.require("read")
