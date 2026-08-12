@@ -38,7 +38,8 @@ def test_scoped_export_is_importable_and_selfconsistent(tmp_path, alice, bob) ->
     assert n == dump["event_count"]
     target.verify_integrity()
     assert target.as_of(bob, "2027-01-01", subject="Bob", predicate="role") == "engineer"
-    eng.close(); target.close()
+    eng.close()
+    target.close()
 
 
 def test_import_into_empty_store_does_not_grant_foreign_space(tmp_path, alice) -> None:

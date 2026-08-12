@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pytest
 from tests.conftest import ManualClock
-from tests.spaces.conftest import principal
 
 from epistemos import Engine, Principal
 from epistemos._util import canonical_json

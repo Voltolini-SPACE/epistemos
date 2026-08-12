@@ -23,7 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src" / "epistemos"
 # invariant tests to run against each mutant (fast; excludes env-specific source-check)
-TEST_TARGETS = ["tests/unit", "tests/security", "tests/index"]
+TEST_TARGETS = ["tests/unit", "tests/security", "tests/index", "tests/spaces"]
 IGNORE = ["--ignore=tests/unit/test_source_check.py"]
 
 # id, file (relative to src/epistemos), find, replace, boundary, note
@@ -130,6 +130,35 @@ MUTANTS = [
      "if not isinstance(principal, Principal):",
      "if False:",
      "auth-fail-closed", "REST refuses a non-Principal from the auth resolver (B-01)"),
+    # --- EPISTEMOS-04 Knowledge Spaces boundaries: each mutant reopens a leak ---
+    ("spaces_private_default_to_public", "spaces/__init__.py",
+     "    if value is None:\n        return Visibility.PRIVATE",
+     "    if value is None:\n        return Visibility.PUBLIC",
+     "spaces-fail-closed", "absent visibility defaults PRIVATE, never PUBLIC (§5)"),
+    ("spaces_deny_to_allow", "authz/__init__.py",
+     "    if obj.get(\"tenant\") != principal.tenant:\n        return False",
+     "    if obj.get(\"tenant\") != principal.tenant:\n        return True",
+     "space-tenant", "read decision fails closed on tenant mismatch"),
+    ("spaces_owner_check_removed", "authz/__init__.py",
+     "return bool(\n            obj.get(\"owner\") == principal.agent",
+     "return bool(\n            True or obj.get(\"owner\") == principal.agent",
+     "space-private", "a private object is readable only by its owner"),
+    ("spaces_member_check_removed", "authz/__init__.py",
+     "if vis == Visibility.TEAM and (owner == principal.agent or is_member(sid, principal.agent)):",
+     "if vis == Visibility.TEAM:",
+     "space-membership", "TEAM access requires ownership or a granted membership"),
+    ("spaces_promote_cap_removed", "core/__init__.py",
+     'if dest_vis >= Visibility.ORGANIZATION and "admin" not in principal.capabilities:\n            principal.require("knowledge.promote")',
+     'if False:\n            principal.require("knowledge.promote")',
+     "space-promote", "promotion to ORG+ requires the knowledge.promote capability (§11)"),
+    ("spaces_search_authorize_removed", "retrieval/__init__.py",
+     "if authorize is not None and not authorize(obj):\n                continue  # space firewall before scoring (EPISTEMOS-04)",
+     "if False:\n                continue  # space firewall before scoring (EPISTEMOS-04)",
+     "space-retrieval", "unauthorized candidates dropped before scoring (§12)"),
+    ("spaces_grant_active_ignored", "core/__init__.py",
+     'return grant is not None and grant.get("kind") == "grant" and bool(grant.get("active"))',
+     'return grant is not None and grant.get("kind") == "grant"',
+     "space-revocation", "a revoked (inactive) grant denies access (§22)"),
 ]
 
 

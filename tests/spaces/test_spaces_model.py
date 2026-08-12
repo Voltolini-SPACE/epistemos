@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from tests.spaces.conftest import principal
 
 from epistemos import Engine, Principal
 from epistemos.errors import AuthorizationError, ValidationError
 from epistemos.spaces import KnowledgeSpace, Visibility, resolve_visibility
-
-from tests.spaces.conftest import principal
 
 
 def test_visibility_is_a_total_order() -> None:

@@ -4,12 +4,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+from tests.conftest import ManualClock
 
 from epistemos import Engine, Principal
 from epistemos.identity import _DEFAULT_CAPS
 from epistemos.storage import MemoryStore, SQLiteStore, Store
-
-from tests.conftest import ManualClock
 
 
 @pytest.fixture(params=["memory", "sqlite"])
