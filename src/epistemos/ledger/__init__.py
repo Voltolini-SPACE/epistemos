@@ -50,6 +50,12 @@ class Op:
     ENTITY_SPLIT = "entity_split"
     DECISION_RECORDED = "decision_recorded"
     EPISODE_RECORDED = "episode_recorded"
+    # Knowledge Spaces (EPISTEMOS-04) — additive, exactly like the open set above.
+    SPACE_CREATED = "space_created"
+    CAPABILITY_GRANTED = "capability_granted"
+    CAPABILITY_REVOKED = "capability_revoked"
+    KNOWLEDGE_SHARED = "knowledge_shared"  # lateral placement into a space
+    KNOWLEDGE_PROMOTED = "knowledge_promoted"  # upward step on the visibility lattice
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

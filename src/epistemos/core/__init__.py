@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
 from .._util import Clock, canonical_json, hash_obj, new_id, now_utc, parse_instant, to_iso
+from ..authz import can_read_object
 from ..errors import (
     AuthorizationError,
     ConflictError,
@@ -32,7 +33,7 @@ from ..errors import (
     SchemaError,
     ValidationError,
 )
-from ..identity import Principal
+from ..identity import Principal, validate_name
 from ..identity import require_principal as _require_principal
 from ..index import IndexHealth
 from ..index.fts import SqliteFtsIndex
@@ -55,6 +56,7 @@ from ..model import (
 from ..provenance import explain as _explain_obj
 from ..provenance import explain_decision as _explain_decision
 from ..retrieval import IndexedRetriever, LegacyScanRetriever, Retriever, Weights
+from ..spaces import KnowledgeSpace, Visibility, resolve_visibility
 from ..storage import SQLiteStore, Store, open_store
 from ..temporal import resolve_current
 
@@ -247,6 +249,35 @@ class Engine:
         return obj
 
     # ======================================================================
+    # Knowledge Spaces authorization (EPISTEMOS-04) — the read firewall
+    # ======================================================================
+    def _space_of(self, space_id: str) -> tuple[Visibility, str, str] | None:
+        """(visibility, owner, tenant) of a space id, or None if unknown (fail closed)."""
+        sp = self.store.get_object(space_id)
+        if sp is None or sp.get("kind") != "space":
+            return None
+        return (resolve_visibility(sp.get("visibility")), sp.get("owner", ""), sp.get("tenant", ""))
+
+    def _is_member(self, space_id: str, agent: str) -> bool:
+        """Is ``agent`` an ACTIVE granted member of ``space_id``? Reads projected server-side grant
+        state (never a caller-supplied Principal field), so a client cannot claim membership."""
+        grant = self.store.get_object(_grant_id(space_id, agent))
+        return grant is not None and grant.get("kind") == "grant" and bool(grant.get("active"))
+
+    def _can_read(self, principal: Principal, obj: dict[str, Any]) -> bool:
+        """The full read decision: IDENTITY→TENANT→SPACE→CAPABILITY→POLICY (fail closed)."""
+        return can_read_object(
+            principal, obj, space_of=self._space_of, is_member=self._is_member
+        )
+
+    def _readable(
+        self, principal: Principal, objs: Iterable[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Filter a candidate set to the objects the principal may read — applied BEFORE any
+        ranking/scoring so an unauthorized object never influences a result (mission §12)."""
+        return [o for o in objs if self._can_read(principal, o)]
+
+    # ======================================================================
     # event emission — the ONLY mutation path
     # ======================================================================
     def _emit(
@@ -330,8 +361,34 @@ class Engine:
             self._apply_merge(record, p, record.ts)
         elif op == Op.ENTITY_SPLIT:
             self._apply_split(record, p)
+        elif op == Op.SPACE_CREATED:
+            self._guard_payload_scope(record, p)
+            self._persist(p)  # a space is a store object (kind="space")
+        elif op == Op.CAPABILITY_GRANTED:
+            self._guard_payload_scope(record, p)
+            self._persist(p)  # grant object (kind="grant"), active=True in payload
+        elif op == Op.CAPABILITY_REVOKED:
+            grant = self.store.get_object(p["grant_id"])
+            if grant is not None:
+                self._guard_payload_scope(record, grant)
+                grant["active"] = False
+                grant["revoked_at"] = record.ts
+                self._persist(grant)
+        elif op in (Op.KNOWLEDGE_SHARED, Op.KNOWLEDGE_PROMOTED):
+            self._apply_placement(record, p)
         else:  # pragma: no cover - defensive
             raise IntegrityError(f"unknown ledger op {op!r}")
+
+    def _apply_placement(self, record: LedgerRecord, p: dict[str, Any]) -> None:
+        """Append a space placement to an object (share/promote). Append-only: the object's whole
+        visibility history is reconstructable from the ledger; this only widens ``spaces``."""
+        obj = self._in_record_scope(record, p["object_id"], what="object")
+        placed = list(obj.get("spaces", ()))
+        dest = p["destination_space"]
+        if dest not in placed:
+            placed.append(dest)
+        obj["spaces"] = placed
+        self._persist(obj)
 
     def _apply_contradiction(self, record: LedgerRecord, p: dict[str, Any], ts: str) -> None:
         for a, b in ((p["fact_id"], p["other_id"]), (p["other_id"], p["fact_id"])):
@@ -572,6 +629,13 @@ class Engine:
                 confidence=self._confidence(new.get("confidence", old.get("confidence", 1.0))),
                 supersedes=(fact_id,),
                 derived_from=tuple(old.get("derived_from", ())),
+                # Inherit the superseded fact's owner AND space placement so a correction preserves
+                # the audience: the replacement stays visible to exactly whoever could see the
+                # original (the ledger still records who performed the supersede). Without this, an
+                # admin correcting another agent's fact would make the current value private to the
+                # admin (EPISTEMOS-04).
+                owner=old.get("owner", principal.agent),
+                spaces=tuple(old.get("spaces", ())),
             ),
             subject=self._str(new.get("subject", old["subject"]), "subject"),
             predicate=self._str(new.get("predicate", old["predicate"]), "predicate"),
@@ -634,6 +698,8 @@ class Engine:
                 confidence=old.get("confidence", 1.0),
                 supersedes=(fact_id,),
                 derived_from=tuple(old.get("derived_from", ())),
+                owner=old.get("owner", principal.agent),  # preserve audience across correction
+                spaces=tuple(old.get("spaces", ())),
             ),
             subject=old["subject"],
             predicate=old["predicate"],
@@ -701,8 +767,12 @@ class Engine:
         """Record that two facts contradict each other. Neither is deleted or unbelieved."""
         principal = _require_principal(principal)
         principal.require("contradict")
-        self._ref_in_scope(principal, fact_id, what="fact")
-        self._ref_in_scope(principal, by, what="fact")
+        a = self._ref_in_scope(principal, fact_id, what="fact")
+        b = self._ref_in_scope(principal, by, what="fact")
+        # You can only dispute facts you can see: an unauthorized fact is reported as not-found
+        # (no existence oracle, and no blind mutation of an object outside your space).
+        if not self._can_read(principal, a) or not self._can_read(principal, b):
+            raise NotFoundError("fact not found")
         if fact_id == by:
             raise ValidationError("a fact cannot contradict itself")
         if note is not None:
@@ -725,6 +795,8 @@ class Engine:
         obj = self._ref_in_scope(principal, fact_id, what="fact")
         if obj.get("kind") != "fact":
             raise ValidationError(f"{fact_id} is not a fact")
+        if not self._can_read(principal, obj):  # only corroborate a fact you can see
+            raise NotFoundError(f"fact {fact_id!r} not found")
         self._ref_in_scope(principal, source, what="source")
         try:
             delta = float(delta_confidence)
@@ -791,9 +863,9 @@ class Engine:
         # could make a genuinely-open belief look "not yet / no longer believed" (T-05).
         anchor = at_valid if at_valid is not None else self._now()
         self._instant(anchor, "at_valid")
-        facts = self.store.facts(
+        facts = self._readable(principal, self.store.facts(
             principal.tenant, principal.namespace, subject=subject, predicate=predicate
-        )
+        ))
         best = resolve_current(facts, at_valid=anchor, at_tx=None, trust_of=self._trust_lookup())
         return Fact.from_dict(best) if best is not None else None
 
@@ -819,9 +891,9 @@ class Engine:
         self._instant(at_valid, "at_valid")
         if at_tx is not None:
             self._instant(at_tx, "at_tx")
-        facts = self.store.facts(
+        facts = self._readable(principal, self.store.facts(
             principal.tenant, principal.namespace, subject=subject, predicate=predicate
-        )
+        ))
         best = resolve_current(facts, at_valid=at_valid, at_tx=at_tx, trust_of=self._trust_lookup())
         return best.get("object") if best is not None else None
 
@@ -836,10 +908,10 @@ class Engine:
     ) -> list[Fact]:
         principal = _require_principal(principal)
         principal.require("read")
-        rows = self.store.facts(
+        rows = self._readable(principal, self.store.facts(
             principal.tenant, principal.namespace,
             subject=subject, predicate=predicate, object=object,
-        )
+        ))
         if believed_only:
             rows = [r for r in rows if r.get("tx_to") is None]
         return [Fact.from_dict(r) for r in rows]
@@ -851,7 +923,9 @@ class Engine:
         state and a provenance summary, ordered by assertion then validity."""
         principal = _require_principal(principal)
         principal.require("read")
-        rows = self.store.facts(principal.tenant, principal.namespace, subject=subject)
+        rows = self._readable(
+            principal, self.store.facts(principal.tenant, principal.namespace, subject=subject)
+        )
         if predicate is not None:
             rows = [r for r in rows if r.get("predicate") == predicate]
         # Order by real instants, not lexicographically over ISO strings: mixed UTC-offset forms
@@ -950,7 +1024,9 @@ class Engine:
     ) -> list[dict[str, Any]]:
         principal = _require_principal(principal)
         principal.require("read")
-        self._ref_in_scope(principal, entity_id, what="entity")
+        start = self._ref_in_scope(principal, entity_id, what="entity")
+        if not self._can_read(principal, start):
+            raise NotFoundError(f"entity {entity_id!r} not found")
         out = []
         if direction in ("out", "both"):
             out += self.store.relations(
@@ -962,7 +1038,19 @@ class Engine:
                 principal.tenant, principal.namespace,
                 target_entity=entity_id, rel_type=rel_type,
             )
-        return out
+        # Graph space isolation (§19): return an edge only if the relation AND its far endpoint are
+        # readable — so a private node's existence cannot be inferred through a readable public one.
+        result = []
+        for rel in out:
+            if not self._can_read(principal, rel):
+                continue
+            other = (rel["target_entity"] if rel["source_entity"] == entity_id
+                     else rel["source_entity"])
+            other_obj = self.store.get_object(other)
+            if other_obj is not None and not self._can_read(principal, other_obj):
+                continue
+            result.append(rel)
+        return result
 
     def query_graph(
         self,
@@ -1171,6 +1259,10 @@ class Engine:
             MemoryClass(memory_class)
         out: list[dict[str, Any]] = []
         for obj in self.store.objects(principal.tenant, principal.namespace):
+            if obj.get("kind") in ("space", "grant"):
+                continue  # control-plane objects are not recallable knowledge
+            if not self._can_read(principal, obj):  # space firewall before any listing
+                continue
             if memory_class is not None:
                 if obj.get("kind") == "episode" and memory_class == MemoryClass.EPISODIC.value:
                     pass
@@ -1181,6 +1273,174 @@ class Engine:
             out.append(obj)
         out.sort(key=lambda o: str(o.get("created_at")), reverse=True)
         return out[:limit]
+
+    # ======================================================================
+    # Knowledge Spaces: create / grant / share / promote (EPISTEMOS-04)
+    # ======================================================================
+    def create_space(
+        self,
+        principal: Principal,
+        *,
+        name: str,
+        visibility: str | Visibility = "TEAM",
+        kind: str | None = None,
+        policy: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> KnowledgeSpace:
+        """Create a visibility container the caller owns. Fail-closed: an unknown visibility raises;
+        creating a space does not grant anyone (including the owner) any capability elsewhere."""
+        principal = _require_principal(principal)
+        principal.require("space.create")
+        name = self._str(name, "name", max_len=self.limits.max_str)
+        vis = resolve_visibility(visibility)
+        ts = self._now()
+        space = KnowledgeSpace(
+            id=new_id("spc"),
+            tenant=principal.tenant,
+            name=name,
+            kind=(kind or vis.name),
+            visibility=vis,
+            owner=principal.agent,
+            created_at=ts,
+            policy=self._metadata(policy),
+            metadata={**self._metadata(metadata), "namespace": principal.namespace},
+        )
+        with self.store.atomic():
+            self._emit(principal, Op.SPACE_CREATED, ts, space.to_dict())
+        return space
+
+    def get_space(self, principal: Principal, space_id: str) -> KnowledgeSpace | None:
+        principal = _require_principal(principal)
+        principal.require("space.read")
+        sp = self.store.get_object(space_id)
+        if sp is None or sp.get("kind") != "space" or sp.get("tenant") != principal.tenant:
+            return None
+        return KnowledgeSpace.from_dict(sp)
+
+    def _load_space(self, principal: Principal, space_id: str) -> dict[str, Any]:
+        sp = self.store.get_object(space_id)
+        if sp is None or sp.get("kind") != "space" or sp.get("tenant") != principal.tenant:
+            raise NotFoundError(f"space {space_id!r} not found")
+        return sp
+
+    def grant_capability(
+        self,
+        principal: Principal,
+        *,
+        space_id: str,
+        agent: str,
+        capabilities: Iterable[str] = ("knowledge.read",),
+    ) -> None:
+        """Grant ``agent`` membership (capabilities) on a space the caller manages. Server-side:
+        the grant is a ledger event projected into authoritative state, never a client claim."""
+        principal = _require_principal(principal)
+        sp = self._load_space(principal, space_id)
+        self._require_space_admin(principal, sp, action="grant_capability")
+        agent = validate_name(agent, what="agent")
+        caps = sorted({self._str(c, "capability", max_len=64) for c in capabilities})
+        if not caps:
+            raise ValidationError("grant requires at least one capability")
+        ts = self._now()
+        grant = {
+            "id": _grant_id(space_id, agent),
+            "kind": "grant",
+            "tenant": principal.tenant,
+            "namespace": principal.namespace,
+            "owner": principal.agent,
+            "created_at": ts,
+            "space": space_id,
+            "agent": agent,
+            "caps": caps,
+            "active": True,
+        }
+        with self.store.atomic():
+            self._emit(principal, Op.CAPABILITY_GRANTED, ts, grant)
+
+    def revoke_capability(self, principal: Principal, *, space_id: str, agent: str) -> None:
+        """Revoke ``agent``'s membership on a space. Current access is denied immediately; the
+        historical fact that access existed remains in the ledger (auditable)."""
+        principal = _require_principal(principal)
+        sp = self._load_space(principal, space_id)
+        self._require_space_admin(principal, sp, action="revoke_capability")
+        agent = validate_name(agent, what="agent")
+        ts = self._now()
+        with self.store.atomic():
+            self._emit(
+                principal, Op.CAPABILITY_REVOKED, ts,
+                {"grant_id": _grant_id(space_id, agent), "space": space_id, "agent": agent},
+            )
+
+    def share(self, principal: Principal, obj_id: str, *, into: str,
+              reason: str | None = None) -> None:
+        """Explicitly place one of the caller's objects into a space (lateral share). The origin
+        placement is preserved (append-only); nothing is moved or rewritten (mission §9/§10)."""
+        self._place(principal, obj_id, into, Op.KNOWLEDGE_SHARED, "knowledge.share", reason,
+                    monotone=False)
+
+    def promote(self, principal: Principal, obj_id: str, *, into: str,
+                reason: str | None = None) -> None:
+        """Promote an object UP the visibility lattice into a wider space. Requires the promote
+        capability; the destination visibility must be >= every current placement (monotone). The
+        whole visibility history stays in the ledger — this is the ONLY path toward PUBLIC."""
+        self._place(principal, obj_id, into, Op.KNOWLEDGE_PROMOTED, "knowledge.promote", reason,
+                    monotone=True)
+
+    def _require_space_admin(
+        self, principal: Principal, sp: dict[str, Any], *, action: str
+    ) -> None:
+        """A space's owner (or admin, or a holder of space.manage) may manage its membership."""
+        if (
+            sp.get("owner") == principal.agent
+            or "admin" in principal.capabilities
+            or "space.manage" in principal.capabilities
+        ):
+            return
+        raise AuthorizationError(f"{action} denied: not the owner of space {sp.get('id')!r}")
+
+    def _place(self, principal: Principal, obj_id: str, dest: str, op: str, cap: str,
+               reason: str | None, *, monotone: bool) -> None:
+        principal = _require_principal(principal)
+        obj = self._ref_in_scope(principal, obj_id, what="object")
+        # only the owner (or admin) may expose their own object to a wider audience
+        principal.guard_owner(obj.get("owner", principal.agent), action=op)
+        dest_sp = self._load_space(principal, dest)
+        dest_vis = resolve_visibility(dest_sp.get("visibility"))
+        # The caller must be able to place into the destination: own it, be a member, or it is
+        # tenant-wide (ORG+). And the DESTINATION VISIBILITY is what gates authority: placing into
+        # PRIVATE/TEAM is a normal collaboration right for the object owner; placing into
+        # ORGANIZATION or wider (the path toward PUBLIC) requires the explicit `knowledge.promote`
+        # capability, which is NOT in the default set (fail closed — the P0 guard, mission §11).
+        can_reach_dest = (
+            dest_sp.get("owner") == principal.agent
+            or self._is_member(dest, principal.agent)
+            or dest_vis >= Visibility.ORGANIZATION
+            or "admin" in principal.capabilities
+        )
+        if not can_reach_dest:
+            raise AuthorizationError(f"{op} denied: no access to destination space {dest!r}")
+        if dest_vis >= Visibility.ORGANIZATION and "admin" not in principal.capabilities:
+            principal.require("knowledge.promote")
+        _ = cap  # capability gating is by destination visibility, computed above
+        if monotone:
+            for placed in obj.get("spaces", ()):
+                cur = self._space_of(placed)
+                cur_vis = cur[0] if cur is not None else Visibility.PRIVATE
+                if dest_vis < cur_vis:
+                    raise ValidationError(
+                        f"promotion must not lower visibility: {dest_vis.name} < {cur_vis.name}"
+                    )
+        if reason is not None:
+            reason = self._str(reason, "reason", max_len=self.limits.max_str)
+        ts = self._now()
+        with self.store.atomic():
+            self._emit(principal, op, ts, {
+                "object_id": obj_id,
+                "destination_space": dest,
+                "source_spaces": list(obj.get("spaces", ())),
+                "shared_by": principal.agent if op == Op.KNOWLEDGE_SHARED else None,
+                "promoted_by": principal.agent if op == Op.KNOWLEDGE_PROMOTED else None,
+                "reason": reason,
+            })
 
     # ======================================================================
     # retrieval & explanation
@@ -1195,6 +1455,10 @@ class Engine:
         if obj is None:
             return None
         if obj.get("tenant") != principal.tenant or obj.get("namespace") != principal.namespace:
+            return None
+        # Space firewall (EPISTEMOS-04): an object the caller is not authorized to see in its space
+        # is indistinguishable from absent (no existence oracle across the space boundary).
+        if not self._can_read(principal, obj):
             return None
         cls = _KIND_TO_CLS.get(obj.get("kind", ""))
         return cls.from_dict(obj) if cls else obj
@@ -1233,6 +1497,10 @@ class Engine:
             text=text, subject=subject, predicate=predicate, object=object,
             kinds=kinds, limit=limit_int, believed_only=believed_only,
             at_valid=at_valid, at_tx=at_tx,
+            # Space firewall: candidates the caller cannot read are dropped BEFORE scoring/ranking,
+            # so an unauthorized object never influences a result's score, rank, count or timing
+            # ranking (mission §12). Authorization precedes retrieval, not the reverse.
+            authorize=lambda o: self._can_read(principal, o),
         )
         # Use the FTS index only when it is HEALTHY (complete + consistent). Otherwise fall back
         # to the correct O(N) scan — never return stale/incomplete results from a degraded index.
@@ -1278,6 +1546,8 @@ class Engine:
         if obj is None:
             raise NotFoundError(f"{obj_id!r} not found")
         if obj.get("tenant") != principal.tenant or obj.get("namespace") != principal.namespace:
+            raise NotFoundError(f"{obj_id!r} not found")
+        if not self._can_read(principal, obj):  # provenance space isolation (§15/§19)
             raise NotFoundError(f"{obj_id!r} not found")
         idx = self.provenance_index
         if obj.get("kind") == "decision":
@@ -1576,6 +1846,11 @@ def _carries_chain(events: Any) -> bool:
     return all(
         isinstance(e, dict) and all(f in e for f in _CHAIN_FIELDS) for e in events
     )
+
+
+def _grant_id(space_id: str, agent: str) -> str:
+    """Deterministic id for a (space, agent) grant so grant/revoke address the same object."""
+    return f"grant_{space_id}_{agent}"
 
 
 def _json_depth(obj: Any, current: int = 0) -> int:

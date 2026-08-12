@@ -55,8 +55,11 @@ def test_metadata_cap_reenforced_on_cross_agent_append() -> None:
     eng = Engine(MemoryStore(), clock=ManualClock())
     s = eng.add_source(CTX, uri="mem://s", trust=0.9)
     f = eng.assert_fact(CTX, subject="X", predicate="p", object="v", source=s.id)
-    # pre-fill metadata close to the 64 KiB cap by asserting with large metadata is capped on
-    # create; here we drive many confirms and assert the object never exceeds the cap.
+    # EPISTEMOS-04: share into a team space so cross-agent Bob may confirm (see the fact).
+    space = eng.create_space(CTX, name="team", visibility="TEAM")
+    eng.grant_capability(CTX, space_id=space.id, agent="bob")
+    eng.share(CTX, f.id, into=space.id)
+    # drive many confirms and assert the object never exceeds the cap.
     sb = eng.add_source(BOB, uri="mem://b", trust=0.9)
     from epistemos.core import _MAX_ANNOTATIONS
     for _ in range(_MAX_ANNOTATIONS + 200):

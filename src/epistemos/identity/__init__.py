@@ -51,6 +51,12 @@ class Capability(str):
 # Default capabilities a principal has within its own scope when no external authority
 # (NOMOS) is attenuating it. Reads and writes inside one's own tenant/namespace are
 # allowed; destructive history operations are still explicit but permitted by default.
+#
+# EPISTEMOS-04: the collaborative capabilities — sharing a private object into a wider space,
+# promoting it up the visibility lattice, and managing spaces/grants — are NOT in the default set.
+# They fail closed: a principal cannot share/promote/publish or grant membership unless explicitly
+# granted the capability, so no default-caps principal can move knowledge toward PUBLIC. (Creating a
+# space and reading are convenience-safe and remain in the default set.)
 _DEFAULT_CAPS = frozenset(
     {
         "read",
@@ -62,6 +68,20 @@ _DEFAULT_CAPS = frozenset(
         "decide",
         "ingest",
         "export",
+        "space.create",  # anyone may create a space they own
+        "space.read",
+    }
+)
+
+# The full capability vocabulary (mission §6). Roles (VISITOR/MEMBER/CONTRIBUTOR/REVIEWER/CURATOR/
+# OWNER) are convenience *sets* of these; enforcement is always by capability, never by role name.
+KNOWLEDGE_CAPABILITIES = frozenset(
+    {
+        "knowledge.read", "knowledge.search", "knowledge.contribute", "knowledge.share",
+        "knowledge.review", "knowledge.promote", "knowledge.retract",
+        "claim.confirm", "claim.dispute", "evidence.attach",
+        "provenance.read", "history.read", "graph.traverse",
+        "space.create", "space.read", "space.manage", "space.invite",
     }
 )
 

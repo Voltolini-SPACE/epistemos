@@ -96,6 +96,10 @@ class Envelope:
     supersedes: tuple[str, ...] = ()
     contradicts: tuple[str, ...] = ()
     derived_from: tuple[str, ...] = ()
+    # Knowledge Spaces (EPISTEMOS-04): the visibility container(s) this object is placed in. Empty
+    # means PRIVATE to the owner (the fail-closed default) — no space object required, so the
+    # local-first single-agent case needs zero configuration and v0.3 behaviour is reproduced.
+    spaces: tuple[str, ...] = ()
     schema_version: int = SCHEMA_VERSION
     metadata: dict[str, Any] = field(default_factory=dict)
 
