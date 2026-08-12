@@ -167,6 +167,14 @@ def test_server_header_hides_python_version(server):
     assert "Python/" not in server_hdr, server_hdr
 
 
+def test_no_cors_header_same_origin_only(server):
+    # the panel is same-origin by design — it must not advertise a cross-origin allowance
+    host, port, _ = server
+    _, headers, _ = _get(host, port, "/api/counts", token="tok-alice")
+    assert "Access-Control-Allow-Origin" not in headers
+    assert "Access-Control-Allow-Credentials" not in headers
+
+
 # ---- auth / oracle / SSE at the HTTP layer ----
 @pytest.mark.parametrize("token", ["nope", "tok-alic", "' OR '1'='1", "A" * 4000])
 def test_bad_tokens_are_rejected(server, token):
