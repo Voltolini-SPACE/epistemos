@@ -44,9 +44,15 @@ class SqliteFtsIndex(LexicalIndex):
         try:
             with self._lock:
                 self._conn.executescript(_SCHEMA.format(tokenize=tokenizer.fts_tokenize))
-        except sqlite3.OperationalError:
-            # FTS5 not compiled into this SQLite build (or the tokenizer is unavailable)
-            self._state = IndexHealth.UNAVAILABLE
+        except sqlite3.OperationalError as exc:
+            # Only a genuinely absent FTS5 module (or unknown tokenizer) means UNAVAILABLE — a
+            # permanent, no-index state. A transient error like "database is locked" must NOT be
+            # misdiagnosed as "FTS5 not compiled in" and permanently disable the index (OV-03).
+            msg = str(exc).lower()
+            if "no such module" in msg or "no such tokenizer" in msg or "fts5" in msg:
+                self._state = IndexHealth.UNAVAILABLE
+            else:
+                raise
 
     # -- mutation (called inside the store's transaction) --------------------
     def reindex(self, obj: dict[str, Any]) -> None:

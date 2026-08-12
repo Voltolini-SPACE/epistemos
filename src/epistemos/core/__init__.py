@@ -1202,9 +1202,21 @@ class Engine:
         principal.require("read")
         if text is not None:
             self._str(text, "text", max_len=self.limits.max_text)
+        try:
+            limit_int = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(f"limit must be an integer: {limit!r}") from exc
+        if limit_int < 0:  # a negative limit becomes a Python slice that returns all-but-N (B-08)
+            raise ValidationError("limit must be >= 0")
+        if kinds is not None:  # a bare str or non-str element is interpreted incompatibly (B-05)
+            if isinstance(kinds, str) or not isinstance(kinds, (tuple, list)):
+                raise ValidationError("kinds must be a tuple of strings")
+            if not all(isinstance(k, str) for k in kinds):
+                raise ValidationError("every kind must be a string")
+            kinds = tuple(kinds)
         kw = dict(
             text=text, subject=subject, predicate=predicate, object=object,
-            kinds=kinds, limit=int(limit), believed_only=believed_only,
+            kinds=kinds, limit=limit_int, believed_only=believed_only,
             at_valid=at_valid, at_tx=at_tx,
         )
         # Use the FTS index only when it is HEALTHY (complete + consistent). Otherwise fall back

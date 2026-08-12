@@ -212,11 +212,17 @@ def _add_source(
 def _assert_fact(
     engine: Engine, principal: Principal, q: dict[str, str], body: dict[str, Any]
 ) -> dict[str, Any]:
+    extra: dict[str, Any] = {}
+    if body.get("derived_from") is not None:  # do not silently drop provenance links (B-04)
+        extra["derived_from"] = body["derived_from"]
+    if body.get("memory_class") is not None:
+        extra["memory_class"] = body["memory_class"]
     f = engine.assert_fact(
         principal, subject=body["subject"], predicate=body["predicate"],
         object=body.get("object"), valid_from=body.get("valid_from"),
         valid_to=body.get("valid_to"), source=body.get("source"),
         confidence=float(body.get("confidence", 1.0)), metadata=body.get("metadata"),
+        **extra,
     )
     return {"id": f.id, "fact": f.to_dict()}
 
