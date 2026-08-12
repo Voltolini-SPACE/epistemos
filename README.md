@@ -137,10 +137,22 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 - `docs/STATUS.md` — the gate matrix and evidence (v0.1 + v0.2)
 
 > **v0.2 (SCALE-RETRIEVAL)** replaces the v0.1 O(N) text search with a rebuildable, tenant/temporal-
-> aware **FTS5 index** (247×–259× faster at 1k–10k; 100k search 6.2 s → 34 ms) while preserving
+> aware **FTS5 index** (~180×–200× faster at 1k–100k; 100k search ≈ 4.7 s → 28 ms) while preserving
 > explainability, temporal semantics, provenance, tenancy and zero-egress. The scan remains the
 > correctness reference and safe fallback. See
 > [`docs/EPISTEMOS_V0_2_FINAL_REPORT.md`](docs/EPISTEMOS_V0_2_FINAL_REPORT.md) and ADR-016…020.
+>
+> **v0.3 (AUDIT + UPLIFT)** re-audited v0.2 adversarially and fixed every material defect (two
+> cross-tenant leaks, a bitemporal history-rewrite, retrieval-fallback semantics, agent-isolation
+> gaps, index-health blindness), then added a rebuildable **provenance index** — `explain()` goes
+> from O(ledger) (1.9 s at 100k) to **flat ~0.05 ms** (ADR-022) — **opt-in unicode search**
+> (`Engine.open(tokenizer="unicode")`, ADR-023), and a retrieval-semantics fix so a degraded index
+> answers the *same question* as a healthy one (ADR-021). 700 tests, mutation 25/25, zero runtime
+> deps preserved. It also assesses (design only) evolving EPISTEMOS into collaborative/federated
+> knowledge infrastructure without sacrificing local-first — see
+> [`docs/EPISTEMOS_V0_3_FINAL_REPORT.md`](docs/EPISTEMOS_V0_3_FINAL_REPORT.md),
+> [`docs/audit/EPISTEMOS_V0_2_AUDIT.md`](docs/audit/EPISTEMOS_V0_2_AUDIT.md), and
+> [`docs/collaboration/`](docs/collaboration/COLLABORATIVE_KNOWLEDGE_MODEL.md).
 
 ## License
 
