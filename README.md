@@ -33,7 +33,7 @@ Python library; its **Panel** turns that core into a living, explorable interfac
 
 ## Status
 
-**Core `v0.7.0` + Panel `v1`.** Clean-room, not a fork or submodule of any system.
+**Core `v0.7.0` + Panel `v1.1`.** Clean-room, not a fork or submodule of any system.
 
 The **core** delivers **Collaborative Claims** — verifiable epistemology where *contribution ≠
 truth*: claims, typed evidence and individual reviews are first-class, **belief is derived (never
@@ -41,7 +41,7 @@ a stored boolean)** and acceptance is **governed** through a pluggable policy po
 offline, no LLM). It builds on **Knowledge Spaces** + capability authorization (private-by-default,
 share by permission).
 
-The **Panel** (`epistemos-panel-v1`) is the operational interface over that core: a local-first,
+The **Panel** (`epistemos-panel-v1.1`) is the operational interface over that core: a local-first,
 zero-egress web app — knowledge-graph explorer, claim center with belief decomposition, live
 activity over SSE, timeline + time-travel, and honest system health. Authorization stays in the
 core; the browser is a read-only consumer that grants nothing.
@@ -145,7 +145,7 @@ What it gives you:
   level-of-detail, viewport culling, keyboard navigation and an accessible list view.
 - **Claim Center + belief decomposition** — see a claim's evidence and reviews resolve into a
   *derived* belief; contribution is never mistaken for truth.
-- **Global search + `⌘K` command palette** — instant, typed, grouped results across everything you can read.
+- **Global search + `⌘K` command palette** — fast, typed, grouped results across everything you can read.
 - **Live activity over SSE** — counters, feed and graph update as the ledger grows, no reload.
 - **Timeline + Time Travel** — replay the real bitemporal history and view the past as it was believed.
 - **Spaces · Agents · Sources · Health** — governance surfaces, with *trust ≠ truth* kept explicit.
