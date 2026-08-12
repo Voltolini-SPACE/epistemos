@@ -34,3 +34,8 @@
 | [030](ADR-030-panel-architecture.md) | Panel architecture: the UI is a consumer, authority stays in the core (panel-v1) |
 | [031](ADR-031-event-boundary-sse.md) | Real-time event boundary: Server-Sent Events over the ledger (panel-v1) |
 | [032](ADR-032-authorized-read-model-and-stream.md) | Authorized read-model & server-side stream filtering (panel-v1) |
+| [033](ADR-033-context-envelope.md) | Context Envelope: compress the transmission, not the memory (v0.6) |
+| [034](ADR-034-intent-aware-redundancy-collapse.md) | Intent-aware, safe redundancy collapse (v0.6) |
+| [035](ADR-035-contradiction-pinning.md) | Contradiction pinning, authorization-safe (v0.6) |
+| [036](ADR-036-context-completeness.md) | Honest context completeness (`context_incomplete`) (v0.6) |
+| [037](ADR-037-experimental-continuations.md) | Experimental token-budget packing & continuations, off by default (v0.6) |

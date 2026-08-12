@@ -1922,6 +1922,34 @@ class Engine:
             for r in results
         ]
 
+    def context(
+        self,
+        principal: Principal,
+        query: str | None = None,
+        *,
+        compact: bool = True,
+        at_tx: Any = None,
+        intent: str | None = None,
+    ) -> dict[str, Any]:
+        """Build an evidence-preserving compact **Context Envelope** (EPCTX/1) over the current
+        authorized retrieval (v0.6, ADR-033). This is **additive** — :meth:`search` is unchanged and
+        still available. The envelope pins contradictions, collapses only *safe* redundancy
+        (superseded current-state versions, true duplicates), preserves provenance, and declares any
+        loss (``context_incomplete``). ``compact=False`` returns the raw authorized retrieval.
+
+        Authorization is unchanged: the envelope is built over ``search`` output and never widens
+        the candidate set (the one relation it follows — a claim's attached contradiction — is
+        re-authorized against ``is_readable``)."""
+        principal = _require_principal(principal)
+        if not compact:
+            return {"format": "raw", "results": self.search(principal, text=query, at_tx=at_tx)}
+        from ..context import ContextEnvelopeBuilder, EnvelopeConfig
+
+        at_tx_s = at_tx if isinstance(at_tx, str) or at_tx is None else str(at_tx)
+        env = ContextEnvelopeBuilder(self).build(
+            principal, query, config=EnvelopeConfig(), at_tx=at_tx_s, intent=intent)
+        return env.to_dict()
+
     def explain(self, principal: Principal, obj_id: str, *, depth: int = 3) -> dict[str, Any]:
         principal = _require_principal(principal)
         principal.require("read")

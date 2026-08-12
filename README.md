@@ -33,7 +33,7 @@ Python library; its **Panel** turns that core into a living, explorable interfac
 
 ## Status
 
-**Core `v0.5.0` + Panel `v1`.** Clean-room, not a fork or submodule of any system.
+**Core `v0.6.0` + Panel `v1`.** Clean-room, not a fork or submodule of any system.
 
 The **core** delivers **Collaborative Claims** — verifiable epistemology where *contribution ≠
 truth*: claims, typed evidence and individual reviews are first-class, **belief is derived (never
@@ -46,15 +46,25 @@ zero-egress web app — knowledge-graph explorer, claim center with belief decom
 activity over SSE, timeline + time-travel, and honest system health. Authorization stays in the
 core; the browser is a read-only consumer that grants nothing.
 
-Adversarially audited across every release. **877 tests** (855 core + 22 panel, incl. a
-private-leak battery and a full-stack HTTP boundary), mutation **39/39** killed on the claim core,
-ruff + mypy `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the gate
-matrix and [`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md) for
-the Panel's freeze evidence.
+The **Context Envelope** (`v0.6`) compresses the *transmission* of memory, not the memory. It is a
+post-retrieval transform — `engine.context(principal, query)` — that pins contradictions (including
+one attached to a retrieved claim, re-authorized), collapses only *provably-safe* redundancy
+(superseded current-state versions for a confident "current" query; true duplicates), preserves
+provenance, and declares any omission honestly (`context_incomplete`). It never widens the candidate
+set and never lowers an authorization boundary. See [`docs/context/`](docs/context/).
 
-**Measured, reproducible** (`benchmarks/`):
+Adversarially audited across every release. **946 tests** (incl. a private-leak battery and a
+full-stack HTTP boundary), mutation **39/39** killed on the claim core and **6/6** on the Context
+Envelope, ruff + mypy `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the
+gate matrix and [`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md)
+for the Panel's freeze evidence.
+
+**Measured, reproducible** (`benchmarks/`, `tools/`):
 - 100k lexical **search: 6.2 s → 34 ms (~183×)** vs the O(N) scan (v0.2, FTS5 index).
 - `explain()` **provenance: ~1.9 s → ~0.05 ms at 100k (~33,800×)** (v0.3, provenance index).
+- Context Envelope: **up to ~35% fewer tokens** in measured redundant scenarios (entity-focused
+  current-state / history queries), stable as the corpus grows, with **zero** evidence,
+  contradiction, or temporal loss (v0.6, `tools/eps08_benchmark.py`). Not a universal figure.
 - Write latency stays ~0.4 ms; the core makes **no network calls** and needs **no LLM**.
 
 ## Design principles (enforced, not aspirational)
@@ -219,7 +229,7 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 
 - `docs/research/` — competitor census, feature harvest, final research report
 - `docs/spec/` — [core data model](docs/spec/CORE_MODEL.md), [memory model](docs/spec/MEMORY_MODEL.md)
-- `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-029)
+- `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-037)
 - `docs/spaces/` — [Knowledge Spaces](docs/spaces/KNOWLEDGE_SPACE_MODEL.md) & capability model (v0.4)
 - `docs/claims/` — [claim](docs/claims/CLAIM_MODEL.md) / [evidence](docs/claims/EVIDENCE_MODEL.md) /
   [review](docs/claims/REVIEW_MODEL.md) / [belief](docs/claims/BELIEF_MODEL.md) models,
@@ -229,6 +239,12 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
   [security](docs/panel/SECURITY.md), [realtime](docs/panel/REALTIME.md),
   [graph explorer](docs/panel/GRAPH_EXPLORER.md), [accessibility](docs/panel/ACCESSIBILITY.md),
   [performance](docs/panel/PERFORMANCE.md), [deployment](docs/panel/DEPLOYMENT.md) (v1)
+- `docs/context/` — the Context Envelope: [architecture](docs/context/ARCHITECTURE.md),
+  [schema `EPCTX/1`](docs/context/ENVELOPE_SCHEMA.md),
+  [redundancy collapse](docs/context/REDUNDANCY_COLLAPSE.md),
+  [contradiction pinning](docs/context/CONTRADICTION_PINNING.md),
+  [security](docs/context/SECURITY.md), [benchmark](docs/context/BENCHMARK.md),
+  [API](docs/context/API.md) (v0.6)
 - `docs/security/` — [threat model](docs/security/THREAT_MODEL.md), license matrix, SBOM, zero-egress,
   mutation report
 - `docs/benchmarks/` — [reproducible benchmark](docs/benchmarks/RESULTS.md) methodology and results

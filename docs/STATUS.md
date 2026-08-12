@@ -199,3 +199,28 @@ Design: [ADR-028](adr/ADR-028-collaborative-claims.md),
 | NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | policy port is a *plug*, not a dependency; no change vs baseline |
 
 `STATUS_FINAL = EPISTEMOS_V0_5_PASS` — tag `epistemos-v0.5.0` (v0.1.0–v0.4.0 unchanged).
+
+## v0.6.0 — Context Envelope (EPISTEMOS-08)
+
+Compress the *transmission* of memory, not the memory. A post-retrieval, evidence-preserving
+transform (`engine.context`) promoting only what EPISTEMOS-07 proved; Dimensions/Resonance/
+Microconnections/Contextual Geometry stay rejected (EPISTEMOS-06). ADR-033…037.
+
+| Gate | Status | Evidence |
+|---|---|---|
+| CRITICAL_EVIDENCE_LOSS = 0 | ✅ | `tools/eps08_benchmark.py` (1000+ state changes) |
+| CONTRADICTION_LOSS = 0 | ✅ | pinning incl. attached, re-authorized; ADR-035 |
+| TEMPORAL_REGRESSION = 0 | ✅ | history preserved for non-current intents; ADR-034 |
+| ANSWER_CORRECTNESS_DELTA ≥ 0 | ✅ | +0.0 (100% → 100%) at scale |
+| TOKEN_REDUCTION > 0 | ✅ | +34.6% (up to ~35% in measured redundant scenarios; not universal) |
+| SCALE (stable, no decay) | ✅ | +35% at 100/500/2000 entities (709→14009 events); latency linear |
+| PRIVATE_CONTEXT_LEAK = 0 | ✅ | `tests/context/test_context.py`; cross-tenant/space; benchmark-scale sweep |
+| RACE (30×) | ✅ | 6 threads × 30 concurrent builds, two principals; no error/cross-contamination |
+| CHAOS (reproducible) | ✅ | same store → byte-identical envelope 5×; structural reproducibility across rebuilds |
+| MUTATION_NON_EQUIVALENT_SURVIVED = 0 | ✅ | 6/6 killed (pin, history, attached-authz, provenance, incomplete, dup/corroboration); `tools/eps08_mutation.py` |
+| EXPERIMENTAL OFF BY DEFAULT | ✅ | budget-pack + continuation gated in `EnvelopeConfig`; ADR-037 |
+| FULL REGRESSION | ✅ | **946 passed**, ruff + mypy `--strict` clean |
+| DOCS / ADRS (033–037) | ✅ | `docs/context/` (7 files), `docs/adr/` |
+| NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | additive module; no cross-project change |
+
+`STATUS_FINAL = EPISTEMOS_V0_6_PASS` — tag `epistemos-v0.6.0` (v0.1.0–v0.5.0 unchanged).
