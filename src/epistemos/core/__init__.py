@@ -775,7 +775,11 @@ class Engine:
     ) -> Fact | None:
         principal = _require_principal(principal)
         principal.require("read")
-        # "current" is anchored to *now* on the valid-time axis unless a moment is given.
+        # "current" is anchored to *now* on the valid-time axis unless a moment is given. On the
+        # transaction axis, "believed now" means the belief interval is still OPEN (tx_to is None)
+        # — a clock-independent definition. Anchoring the tx axis on a clock instant made current()
+        # depend on clock skew: a clock ahead of the data, or data imported from another clock,
+        # could make a genuinely-open belief look "not yet / no longer believed" (T-05).
         anchor = at_valid if at_valid is not None else self._now()
         self._instant(anchor, "at_valid")
         facts = self.store.facts(

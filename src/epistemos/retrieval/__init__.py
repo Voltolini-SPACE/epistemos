@@ -24,7 +24,7 @@ from .._util import now_utc, parse_instant
 from ..index import LexicalIndex
 from ..index.text import ASCII, MAX_QUERY_TERMS, Tokenizer, object_text
 from ..storage import Store
-from ..temporal import believed_at, valid_at
+from ..temporal import believed, believed_at, valid_at
 
 __all__ = ["Retrieved", "Weights", "LegacyScanRetriever", "IndexedRetriever", "Retriever"]
 
@@ -221,7 +221,7 @@ class LegacyScanRetriever(_BaseRetriever):
         for obj in store.objects(tenant, namespace):
             if kinds is not None and obj.get("kind") not in kinds:
                 continue
-            if believed_only and obj.get("kind") == "fact" and obj.get("tx_to") is not None:
+            if believed_only and obj.get("kind") == "fact" and not believed(obj, at_tx):
                 continue
             if not matches_structural(obj, subject=subject, predicate=predicate, object=object):
                 continue
@@ -295,7 +295,7 @@ class IndexedRetriever(_BaseRetriever):
                     continue  # defense-in-depth: never surface an out-of-scope object
                 if kinds is not None and obj.get("kind") not in kinds:
                     continue
-                if believed_only and obj.get("kind") == "fact" and obj.get("tx_to") is not None:
+                if believed_only and obj.get("kind") == "fact" and not believed(obj, at_tx):
                     continue
                 if not matches_structural(obj, subject=subject, predicate=predicate,
                                           object=object):
@@ -309,7 +309,7 @@ class IndexedRetriever(_BaseRetriever):
             for obj in source:
                 if kinds is not None and obj.get("kind") not in kinds:
                     continue
-                if believed_only and obj.get("kind") == "fact" and obj.get("tx_to") is not None:
+                if believed_only and obj.get("kind") == "fact" and not believed(obj, at_tx):
                     continue
                 pairs.append((obj, 0.0))
 

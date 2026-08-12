@@ -24,6 +24,7 @@ __all__ = [
     "instant_in_interval",
     "valid_at",
     "believed_at",
+    "believed",
     "as_of",
     "resolve_current",
 ]
@@ -54,6 +55,19 @@ def believed_at(fact: dict[str, Any], instant: str | datetime | None = None) -> 
     return instant_in_interval(when, fact.get("tx_from"), fact.get("tx_to"))
 
 
+def believed(fact: dict[str, Any], at_tx: str | datetime | None) -> bool:
+    """Belief predicate for queries: at an explicit ``at_tx`` use the belief interval; with
+    ``at_tx is None`` ("now") use whether the interval is still OPEN (``tx_to is None``).
+
+    The open-interval definition of "believed now" is clock-independent, so ``current`` and
+    ``believed_only`` do not depend on how the engine's clock relates to the data's transaction
+    timestamps (EPISTEMOS-03, T-05). Historical reconstruction (``at_tx=T``) still anchors on T.
+    """
+    if at_tx is None:
+        return fact.get("tx_to") is None
+    return believed_at(fact, at_tx)
+
+
 def as_of(
     facts: list[dict[str, Any]],
     *,
@@ -66,7 +80,7 @@ def as_of(
     """
     out = []
     for f in facts:
-        if believed_only and not believed_at(f, at_tx):
+        if believed_only and not believed(f, at_tx):
             continue
         if at_valid is not None and not valid_at(f, at_valid):
             continue
