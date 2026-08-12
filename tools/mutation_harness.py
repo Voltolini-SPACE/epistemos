@@ -23,7 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src" / "epistemos"
 # invariant tests to run against each mutant (fast; excludes env-specific source-check)
-TEST_TARGETS = ["tests/unit", "tests/security", "tests/index", "tests/spaces"]
+TEST_TARGETS = ["tests/unit", "tests/security", "tests/index", "tests/spaces", "tests/claims"]
 IGNORE = ["--ignore=tests/unit/test_source_check.py"]
 
 # id, file (relative to src/epistemos), find, replace, boundary, note
@@ -159,6 +159,35 @@ MUTANTS = [
      'return grant is not None and grant.get("kind") == "grant" and bool(grant.get("active"))',
      'return grant is not None and grant.get("kind") == "grant"',
      "space-revocation", "a revoked (inactive) grant denies access (§22)"),
+    # --- EPISTEMOS-05 Collaborative Claims boundaries: each mutant reopens a real hole ---
+    ("claim_self_acceptance_removed", "core/__init__.py",
+     'if (claim.get("claimant") == principal.agent',
+     'if (False and claim.get("claimant") == principal.agent',
+     "claim-governance", "a claimant cannot govern their own claim into truth (§32)"),
+    ("claim_accept_cap_removed", "core/__init__.py",
+     'principal.require("knowledge.accept")',
+     'principal.require("claim.read")',
+     "claim-truth-gate", "acceptance requires the non-default knowledge.accept capability"),
+    ("claim_evidence_readability_removed", "core/__init__.py",
+     "if ev is not None and self._can_read(principal, ev):",
+     "if ev is not None:",
+     "visibility-composition", "a public claim never exposes private evidence (§15)"),
+    ("claim_ref_readable_oracle", "core/__init__.py",
+     'if not self._can_read(principal, obj):\n            raise NotFoundError(f"{what} {ref_id!r} not found")',
+     'if False:\n            raise NotFoundError(f"{what} {ref_id!r} not found")',
+     "claim-firewall", "a claim outside the caller's spaces is invisible (no oracle §17)"),
+    ("claim_review_space_inherit_removed", "core/__init__.py",
+     'spaces=tuple(claim.get("spaces", ()))),',
+     "spaces=()),",
+     "review-leak", "a review inherits the claim's audience (REVIEW_SPACE_LEAK=0)"),
+    ("belief_dispute_ignored", "claims/belief.py",
+     "    if contested:",
+     "    if False:",
+     "belief-derivation", "one live dispute makes belief DISPUTED — majority is not truth (§9)"),
+    ("belief_governance_hides_dispute", "claims/belief.py",
+     'return f"; NOTE: {len(contested)} dispute/reject still on record" if contested else ""',
+     'return ""',
+     "belief-audit", "governed acceptance still records a coexisting dispute (§10)"),
 ]
 
 

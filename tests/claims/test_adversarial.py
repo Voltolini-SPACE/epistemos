@@ -4,6 +4,7 @@ MUST fail: truth-by-submission, self-acceptance, capability forgery, oracle prob
 from __future__ import annotations
 
 import pytest
+from tests.claims.conftest import principal
 
 from epistemos import Principal
 from epistemos.errors import AuthorizationError, IntegrityError, NotFoundError
@@ -44,6 +45,25 @@ def test_a_default_agent_cannot_accept_anything(cengine, alice, bob) -> None:
     assert "knowledge.accept" not in bob.capabilities
     with pytest.raises(AuthorizationError):
         cengine.accept_claim(bob, c.id)
+
+
+# ATTACK 3b — the engine's OWN truth gate is load-bearing, independent of the policy. ----------
+def test_engine_enforces_accept_capability_even_under_a_permissive_policy(tmp_path) -> None:
+    # a deployment could plug in a lenient policy; the engine must STILL demand knowledge.accept,
+    # so the capability gate is not silently delegated to (and defeatable via) the policy.
+    from epistemos import Engine
+    from epistemos.claims.policy import PolicyDecision
+    from epistemos.storage import MemoryStore
+
+    allow_all = lambda req: PolicyDecision(True, "permissive")  # noqa: E731
+    eng = Engine(MemoryStore(), policy=allow_all)
+    alice = principal("alice")
+    bob = principal("bob")  # default caps: no knowledge.accept
+    sp = _shared(eng, alice, bob)
+    c = eng.create_claim(alice, subject="x", predicate="=", object="1", space=sp)
+    assert "knowledge.accept" not in bob.capabilities
+    with pytest.raises(AuthorizationError):
+        eng.accept_claim(bob, c.id)                 # engine gate fires before the policy runs
 
 
 # ATTACK 4 — forged governance marker via a caller-supplied Principal claim. --------------------
