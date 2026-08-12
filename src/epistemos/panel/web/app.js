@@ -28,7 +28,9 @@ window.__panel = app;
 
 // ---------- connection indicator (shared, live) ----------
 function connEl() {
-  const e = el("span", { class: "conn", dataset: { state: app.stream ? app.stream.state : "offline" } },
+  // role=status makes the connection state an aria-live region — screen readers hear LIVE/OFFLINE
+  const e = el("span", { class: "conn", role: "status", "aria-label": "Realtime connection",
+    dataset: { state: app.stream ? app.stream.state : "offline" } },
     el("span", { class: "dot" }), el("span", { class: "lbl", text: (app.stream?.state || "offline").toUpperCase() }));
   app.conns.add(e);
   return e;

@@ -72,3 +72,47 @@ an authorized count/graph cannot short-circuit. At ≤1k objects the panel is sn
 the heaviest view is ~135 ms. Beyond ~10k, a per-principal authorized index (cached read-model)
 would be the next step — flagged as future work, not a v1 blocker. Ledger tail
 (`read_events(since_seq)`) is O(N) on `MemoryStore` and an indexed range scan on SQLite.
+
+## Soak (§16)
+
+Duration executed: **90 s** (recorded honestly; not a multi-hour run). Load: 1 writer (~20 obj/s),
+2 HTTP readers, 2 SSE clients on **controlled reconnect** every 7 s / 11 s.
+
+| Metric | start | end | verdict |
+|---|--:|--:|---|
+| threads | 9 | 11 | bounded (SSE reconnects do not leak) |
+| file descriptors | 10 | 14 | bounded (fluctuates with reconnects, no leak) |
+| RSS | 32 MB | 56 MB | grows with the **corpus** (0→2,918 objects), not a leak |
+
+No thread/fd leak across ~15 SSE reconnect cycles. RSS growth is attributable to real data (the
+writer added 2,918 objects); it is not unbounded per-request growth.
+
+## Accessibility (§13) — automated DOM sweep
+
+CSP (`script-src 'self'`) correctly blocks injecting an external axe-core bundle, so the audit is a
+self-authored WCAG-AA DOM sweep (no runtime dependency added). Across overview/graph/claims/timeline/
+spaces/agents/sources/health:
+
+- **Structural: 0 issues** — one `<main>` + `<nav>` landmark, exactly one `<h1>` per screen, no
+  skipped heading levels, every `<img>` has alt, every control has an accessible name.
+- **Contrast: 0 issues** over 478 checked text elements (WCAG AA 4.5:1 / 3:1). Raised `--fg-3`
+  (#6E7488 → #868DA3) and the retracted badge to clear 4.5:1.
+- **Dialogs:** command palette and inspector are `role="dialog"` with labels; palette input labeled.
+- **Live regions:** connection indicator `role="status"`; activity feed `role="log"` + `aria-live="polite"`.
+- **Reduced motion:** `@media (prefers-reduced-motion: reduce)` collapses all animation/transition.
+- **Fixes this mission:** graph screen gained an accessible `<h1>`; timeline date input gained an
+  `aria-label`; overview/spaces section headings promoted to `<h2>` (no level skip).
+
+*Caveat:* a manual screen-reader pass (VoiceOver/NVDA) is still recommended — automation covers
+structure/contrast/roles, not the full lived SR experience.
+
+## Responsive (§14)
+
+Horizontal-overflow check across **320 / 375 / 430 / 768 / 1024 / 1440 / 1920** (every breakpoint
+regime: <720 mobile, 720–1000 tablet, >1000 desktop):
+
+- **0 horizontal overflow** on any screen after fixes.
+- **Fixes this mission:** activity-feed summary (`.ev .s`) needed `min-width:0` to truncate instead
+  of overflow; the `.topbar` and `.main` grid items needed `min-width:0` so a 320 px topbar shrinks
+  below its content instead of pushing a 358 px scroll width.
+- Mobile (<720) collapses the sidebar to a bottom-nav; cards stack single-column. Verified at 320 px.

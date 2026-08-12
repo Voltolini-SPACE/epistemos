@@ -48,9 +48,9 @@ export async function overview(ctx) {
   // pulse bars (real per-minute activity)
   const pulse = data.pulse.slice(-30);
   const totalPer = pulse.map((p) => Object.entries(p).filter(([k]) => k !== "t").reduce((s, [, v]) => s + v, 0));
-  const pulseCard = el("div", { class: "card" }, el("h3", { text: "Activity / minute (real ledger events)" }),
+  const pulseCard = el("div", { class: "card" }, el("h2", { class: "cardh", text: "Activity / minute (real ledger events)" }),
     pulse.length ? bars(pulse.map((p, i) => ({ label: p.t.slice(11), value: totalPer[i] }))) : empty("∅", "No activity in window"));
-  const dist = el("div", { class: "card" }, el("h3", { text: "Belief distribution" }),
+  const dist = el("div", { class: "card" }, el("h2", { class: "cardh", text: "Belief distribution" }),
     el("div", { class: "row", style: "gap:24px" },
       donut([
         { label: "accepted", value: c.accepted, color: "var(--accepted)" },
@@ -66,11 +66,12 @@ export async function overview(ctx) {
   view.append(el("div", { class: "grid cols-4", style: "margin-top:16px" },
     metric(c.entities, "entities"), metric(c.sources, "sources"),
     metric(c.spaces, "knowledge spaces", "SNAPSHOT"), metric(c.agents, "active agents")));
-  // live activity feed
-  const feed = el("div", { class: "feed" });
+  // live activity feed — role=log is a polite aria-live region (new events are announced)
+  const feed = el("div", { class: "feed", role: "log", "aria-live": "polite",
+    "aria-label": "Live activity stream" });
   ctx.feedEl = feed;
   const activity = el("div", { class: "card", style: "margin-top:16px" },
-    el("div", { class: "row" }, el("h3", { text: "Live activity stream" }), el("div", { style: "flex:1" }),
+    el("div", { class: "row" }, el("h2", { class: "cardh", text: "Live activity stream" }), el("div", { style: "flex:1" }),
       el("a", { href: "#/timeline", text: "Open timeline →" })), feed);
   for (const ev of data.recent) feed.append(eventRow(ev, ctx));
   view.append(activity);
@@ -89,6 +90,8 @@ export function eventRow(ev, ctx, isNew = false) {
 // ---------- GRAPH EXPLORER ----------
 export async function graph(ctx) {
   const wrap = el("div", { class: "view full" });
+  // an accessible page heading for the canvas view (visually hidden — the graph is the visual)
+  wrap.append(el("h1", { class: "visually-hidden", text: "Knowledge graph" }));
   const gwrap = el("div", { class: "graphwrap" });
   wrap.append(gwrap);
   const data = await guard(() => api.graph({ limit: 1500 }));
@@ -292,7 +295,8 @@ export async function explain(ctx, id) {
 // ---------- TIMELINE + TIME TRAVEL ----------
 export async function timeline(ctx) {
   const view = el("div", { class: "view" });
-  const atInput = el("input", { type: "datetime-local", class: "btn", style: "color:var(--fg)" });
+  const atInput = el("input", { type: "datetime-local", class: "btn", style: "color:var(--fg)",
+    "aria-label": "Time travel: view knowledge as it was believed at this moment" });
   const travelBtn = el("button", { class: "btn", text: "⏳ Time travel" });
   view.append(head("Timeline", "Bitemporal — go back and ask: what did EPISTEMOS know then?",
     el("div", { class: "row" }, atInput, travelBtn)));
@@ -331,7 +335,7 @@ export async function spaces(ctx) {
   view.append(el("div", { class: "grid cols-3" }, ...d.spaces.map((s) => el("div", { class: "card" },
     el("div", { class: "row" }, visBadge(s.visibility), el("span", { style: "flex:1" }),
       s.level >= 3 ? el("span", { class: "tag", dataset: { state: "stale" }, text: "⚠ exposure" }) : null),
-    el("h3", { style: "margin:10px 0 4px; text-transform:none; font-size:15px; color:var(--fg)", text: s.name }),
+    el("h2", { style: "margin:10px 0 4px; text-transform:none; font-size:15px; color:var(--fg); letter-spacing:0", text: s.name }),
     el("dl", { class: "kv" }, el("dt", { text: "owner" }), el("dd", { class: "mono", text: s.owner }),
       el("dt", { text: "members" }), el("dd", { class: "mono", text: s.members }),
       el("dt", { text: "level" }), el("dd", { class: "mono", text: `${s.visibility} (${s.level})` }))))));
