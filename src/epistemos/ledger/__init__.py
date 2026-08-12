@@ -56,6 +56,15 @@ class Op:
     CAPABILITY_REVOKED = "capability_revoked"
     KNOWLEDGE_SHARED = "knowledge_shared"  # lateral placement into a space
     KNOWLEDGE_PROMOTED = "knowledge_promoted"  # upward step on the visibility lattice
+    # Collaborative claims (EPISTEMOS-05) — the claim graph, additive.
+    CLAIM_ASSERTED = "claim_asserted"
+    CLAIM_RETRACTED = "claim_retracted"
+    CLAIM_SUPERSEDED = "claim_superseded"
+    EVIDENCE_RECORDED = "evidence_recorded"
+    EVIDENCE_ATTACHED = "evidence_attached"  # typed link evidence -> claim
+    CLAIM_REVIEWED = "claim_reviewed"  # one reviewer's individual assessment
+    CLAIM_ACCEPTED = "claim_accepted"  # governed acceptance (policy)
+    CLAIM_REJECTED = "claim_rejected"  # governed rejection (policy)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

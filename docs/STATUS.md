@@ -158,3 +158,44 @@ model docs in [`docs/spaces/`](spaces/KNOWLEDGE_SPACE_MODEL.md); report
 | NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | no EPISTEMOS-caused change vs baseline |
 
 `STATUS_FINAL = EPISTEMOS_V0_4_PASS` — tag `epistemos-v0.4.0` (v0.1.0/v0.2.0/v0.3.0 unchanged).
+
+## EPISTEMOS-05 (COLLABORATIVE CLAIMS) gates
+
+Adds verifiable collaborative epistemology on the v0.4 spaces: **contribution ≠ truth**. Claim /
+evidence / review are first-class; belief is *derived*; acceptance is *governed* via a policy port.
+Design: [ADR-028](adr/ADR-028-collaborative-claims.md),
+[ADR-029](adr/ADR-029-derived-belief-governed-acceptance.md); model docs in
+[`docs/claims/`](claims/CLAIM_MODEL.md); report
+[`EPISTEMOS_V0_5_FINAL_REPORT.md`](EPISTEMOS_V0_5_FINAL_REPORT.md).
+
+| Gate | State | Evidence |
+|------|-------|----------|
+| SOURCE_CHECK | ✅ | `import epistemos` → 0.5.0 from repo src |
+| BASELINE_REGRESSION (v0.1–v0.4) | ✅ | full suite 855 green; single-agent behaviour unchanged |
+| NEW_TESTS | ✅ | `tests/claims/` (7 files: model, pipeline, firewall, adversarial, race, chaos) |
+| RUFF / MYPY_STRICT | ✅ | `ruff check src tests` clean; `mypy --strict` clean (32 files) |
+| CONTRIBUTION_NOT_TRUTH | ✅ | bare claim = PROPOSED; self-confirm only SUPPORTED; `test_adversarial.py` |
+| CLAIM / EVIDENCE / REVIEW model | ✅ | ADR-028; `test_claim_model.py`, `test_claim_pipeline.py` |
+| DERIVED_BELIEF (never stored) | ✅ | ADR-029; `claims/belief.py`; `test_claim_model.py` |
+| MAJORITY_IS_NOT_TRUTH | ✅ | one dispute ⟶ DISPUTED; `test_multiple_reviewers_disagree…` |
+| GOVERNED_ACCEPTANCE (policy port) | ✅ | `knowledge.accept` non-default; `LocalDefaultPolicy`; engine gate before policy |
+| SELF_ACCEPTANCE_DENIED | ✅ | §32; `test_claimant…cannot_self_accept` |
+| CLAIM_SPACE_LEAK = 0 | ✅ | `test_claim_firewall.py` |
+| EVIDENCE_SPACE_LEAK = 0 | ✅ | `test_claim_firewall.py` |
+| REVIEW_SPACE_LEAK = 0 | ✅ | reviews inherit claim spaces; `test_claim_firewall.py` |
+| PRIVATE_TO_PUBLIC_LEAK = 0 (composition §15) | ✅ | public claim never exposes private evidence; `test_public_claim…` |
+| EXPLAIN_AUTHZ_BEFORE_TRAVERSAL | ✅ | `explain_claim`; v0.4 explain leak stays closed |
+| NO_EXISTENCE_ORACLE | ✅ | `test_no_existence_oracle_across_the_space_boundary` |
+| BITEMPORAL_CLAIMS | ✅ | `test_claim_is_bitemporal` |
+| LEDGER_INTEGRITY / PROJECTION_REBUILD | ✅ | `test_rebuild_projection_equals_replay_with_claims`, chaos |
+| RACE (30 cycles) | ✅ | `test_claim_race.py` (reviews vs read; grant toggle vs read) |
+| CHAOS | ✅ | `test_claim_chaos.py` (rebuild-from-ledger; no partial acceptance; no leak) |
+| MUTATION_NON_EQUIVALENT_SURVIVED = 0 | ✅ | 39/39 killed (7 new claim boundary mutants); `MUTATION_REPORT.md` |
+| PERFORMANCE (no core regression) | ✅ | `benchmarks/bench.py`; claim create/belief/explain reported |
+| ZERO_EGRESS / LOCAL_FIRST / NULL_LLM | ✅ | policy port is offline; 0 socket ops full claim lifecycle |
+| MIT_LICENSE (unchanged) | ✅ | LICENSE=MIT; APACHE_REFERENCE_RESIDUAL=0 |
+| DOCS / ADRS (028–029) | ✅ | `docs/adr/`, `docs/claims/` (8 files), report |
+| WORKTREE_CLEAN | ✅ | empty at freeze |
+| NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | policy port is a *plug*, not a dependency; no change vs baseline |
+
+`STATUS_FINAL = EPISTEMOS_V0_5_PASS` — tag `epistemos-v0.5.0` (v0.1.0–v0.4.0 unchanged).

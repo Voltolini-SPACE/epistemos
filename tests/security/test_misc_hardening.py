@@ -19,7 +19,7 @@ CTX = Principal(tenant="acme", agent="a", namespace="hr")
 
 def test_package_version_is_current() -> None:
     """OV-08: the shipped version must not still claim 0.1.0."""
-    assert __version__ == "0.4.0"
+    assert __version__ == "0.5.0"
 
 
 def test_recall_order_is_deterministic_across_backends(tmp_path) -> None:

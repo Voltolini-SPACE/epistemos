@@ -25,6 +25,18 @@ from typing import Any, Literal, overload
 
 from .._util import Clock, canonical_json, hash_obj, new_id, now_utc, parse_instant, to_iso
 from ..authz import can_read_object
+from ..claims import (
+    Claim,
+    ClaimStatus,
+    ContributorKind,
+    Evidence,
+    EvidenceKind,
+    EvidenceRelation,
+    Review,
+    Verdict,
+)
+from ..claims.belief import derive_belief
+from ..claims.policy import LocalDefaultPolicy, Policy, PolicyRequest
 from ..errors import (
     AuthorizationError,
     ConflictError,
@@ -73,6 +85,9 @@ _KIND_TO_CLS: dict[str, Any] = {
     "episode": Episode,
     "observation": Observation,
     "document": Document,
+    "claim": Claim,
+    "evidence": Evidence,
+    "review": Review,
 }
 
 EXPORT_FORMAT = "epistemos-events"
@@ -107,10 +122,15 @@ class Engine:
         retriever: Retriever | None = None,
         limits: EngineLimits | None = None,
         tokenizer: str | Tokenizer = "ascii",
+        policy: Policy | None = None,
     ) -> None:
         self.store = store
         self.clock = clock
         self.limits = limits or EngineLimits()
+        # Governed-acceptance policy (EPISTEMOS-05): the DECISION to accept a claim as knowledge is
+        # delegated to a pluggable policy. Default is local + deterministic, so the engine works
+        # standalone; a NOMOS/other PDP adapter can replace it without the core depending on it.
+        self.policy: Policy = policy or LocalDefaultPolicy()
         weights = retriever.weights if retriever is not None else None
         # Tokenizer selects how text is split for search. "ascii" (default) is the v0.1/v0.2
         # behaviour; "unicode" (ADR-023) folds diacritics and indexes non-ASCII scripts, using
@@ -376,8 +396,39 @@ class Engine:
                 self._persist(grant)
         elif op in (Op.KNOWLEDGE_SHARED, Op.KNOWLEDGE_PROMOTED):
             self._apply_placement(record, p)
+        elif op in (Op.CLAIM_ASSERTED, Op.EVIDENCE_RECORDED, Op.CLAIM_REVIEWED):
+            self._guard_payload_scope(record, p)
+            self._persist(p)  # claim / evidence / review objects
+        elif op in (Op.CLAIM_RETRACTED, Op.CLAIM_SUPERSEDED):
+            obj = self._in_record_scope(record, p["claim_id"], what="claim")
+            if obj.get("status") == ClaimStatus.OPEN.value:  # append-only: first close stands
+                obj["status"] = p["status"]
+                obj["tx_to"] = p.get("tx_to")
+                self._persist(obj)
+        elif op == Op.EVIDENCE_ATTACHED:
+            self._apply_evidence_attached(record, p)
+        elif op in (Op.CLAIM_ACCEPTED, Op.CLAIM_REJECTED):
+            claim = self._in_record_scope(record, p["claim_id"], what="claim")
+            # governance is recorded on the claim as a marker; belief is still DERIVED from it plus
+            # reviews (never a bare boolean). The full decision stays in the ledger.
+            gov = {"actor": record.actor, "at": record.ts, "reason": p.get("reason")}
+            claim.setdefault("metadata", {})[
+                "accepted" if op == Op.CLAIM_ACCEPTED else "rejected"
+            ] = gov
+            self._persist(claim)
         else:  # pragma: no cover - defensive
             raise IntegrityError(f"unknown ledger op {op!r}")
+
+    def _apply_evidence_attached(self, record: LedgerRecord, p: dict[str, Any]) -> None:
+        """Record a typed evidence->claim link on the claim (space-safe: the link stores only the
+        evidence id + relation; reading the evidence content is authorized separately)."""
+        claim = self._in_record_scope(record, p["claim_id"], what="claim")
+        links = list(claim.get("metadata", {}).get("evidence_links", []))
+        entry = {"evidence": p["evidence_id"], "relation": p["relation"]}
+        if entry not in links:
+            links.append(entry)
+        claim.setdefault("metadata", {})["evidence_links"] = links[-_MAX_ANNOTATIONS:]
+        self._persist(claim)
 
     def _apply_placement(self, record: LedgerRecord, p: dict[str, Any]) -> None:
         """Append a space placement to an object (share/promote). Append-only: the object's whole
@@ -1441,6 +1492,321 @@ class Engine:
                 "promoted_by": principal.agent if op == Op.KNOWLEDGE_PROMOTED else None,
                 "reason": reason,
             })
+
+    # ======================================================================
+    # Collaborative claims (EPISTEMOS-05): contribution != truth
+    # ======================================================================
+    def create_claim(
+        self,
+        principal: Principal,
+        *,
+        subject: str,
+        predicate: str,
+        object: str | None = None,  # noqa: A002
+        claimant: str | None = None,
+        contributor_kind: str = ContributorKind.AGENT.value,
+        source: str | None = None,
+        confidence: float = 1.0,
+        valid_from: str | None = None,
+        valid_to: str | None = None,
+        space: str | None = None,
+        derived_from: Iterable[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Claim:
+        """Assert a claim (a contribution, NOT truth). ``claimant`` defaults to the caller's agent
+        but may name a distinct identity (human/service) on whose behalf the agent ingests it; the
+        caller's agent is recorded as ``owner`` (the ingesting agent), and ``source`` is the
+        external origin: three separate identities (§3). PRIVATE by default; ``space`` places it."""
+        principal = _require_principal(principal)
+        principal.require("claim.create")
+        subject = self._str(subject, "subject")
+        predicate = self._str(predicate, "predicate")
+        object = self._str(object, "object", allow_none=True)  # noqa: A002
+        claimant = self._str(claimant or principal.agent, "claimant", max_len=128)
+        ContributorKind(contributor_kind)  # validate
+        self._instant(valid_from, "valid_from")
+        self._instant(valid_to, "valid_to")
+        confidence = self._confidence(confidence)
+        derived = tuple(derived_from or ())
+        for ref in derived:
+            self._ref_readable(principal, ref, what="derived_from")
+        if source is not None:
+            self._ref_in_scope(principal, source, what="source")
+        spaces = self._resolve_placement(principal, space)
+        ts = self._now()
+        claim = Claim(
+            **self._envelope(principal, "claim", new_id("clm"), ts, source=source,
+                             confidence=confidence, derived_from=derived, spaces=spaces),
+            subject=subject, predicate=predicate, object=object,
+            claimant=claimant, contributor_kind=contributor_kind,
+            valid_from=valid_from, valid_to=valid_to, tx_from=ts, tx_to=None,
+            status=ClaimStatus.OPEN.value, metadata=self._metadata(metadata),
+        )
+        with self.store.atomic():
+            self._emit(principal, Op.CLAIM_ASSERTED, ts, claim.to_dict())
+        return claim
+
+    def retract_claim(
+        self, principal: Principal, claim_id: str, *, reason: str | None = None
+    ) -> None:
+        """Withdraw a claim. History preserved; the claim remains, its belief becomes RETRACTED."""
+        principal = _require_principal(principal)
+        principal.require("claim.retract")
+        claim = self._ref_readable(principal, claim_id, what="claim")
+        if claim.get("kind") != "claim":
+            raise ValidationError(f"{claim_id} is not a claim")
+        principal.guard_owner(claim.get("owner", principal.agent), action="retract_claim")
+        if claim.get("status") != ClaimStatus.OPEN.value:
+            raise ConflictError(f"claim {claim_id} is already {claim.get('status')}")
+        if reason is not None:
+            reason = self._str(reason, "reason", max_len=self.limits.max_str)
+        ts = self._now()
+        with self.store.atomic():
+            self._emit(principal, Op.CLAIM_RETRACTED, ts, {
+                "claim_id": claim_id, "status": ClaimStatus.RETRACTED.value,
+                "tx_to": ts, "reason": reason,
+            })
+
+    def create_evidence(
+        self,
+        principal: Principal,
+        *,
+        evidence_kind: str = EvidenceKind.URI.value,
+        title: str | None = None,
+        uri: str | None = None,
+        content_hash: str | None = None,
+        origin: str | None = None,
+        captured_at: str | None = None,
+        space: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Evidence:
+        """Record a typed piece of evidence. The full content need not be stored — a URI + content
+        hash is a valid, integrity-checkable reference (§5). PRIVATE by default (its own space)."""
+        principal = _require_principal(principal)
+        principal.require("evidence.create")
+        EvidenceKind(evidence_kind)
+        title = self._str(title, "title", allow_none=True)
+        uri = self._str(uri, "uri", max_len=self.limits.max_uri, allow_none=True)
+        content_hash = self._str(content_hash, "content_hash", max_len=256, allow_none=True)
+        origin = self._str(origin, "origin", allow_none=True)
+        if captured_at is not None:
+            self._instant(captured_at, "captured_at")
+        spaces = self._resolve_placement(principal, space)
+        ts = self._now()
+        ev = Evidence(
+            **self._envelope(principal, "evidence", new_id("evd"), ts, spaces=spaces),
+            evidence_kind=evidence_kind, title=title, uri=uri, content_hash=content_hash,
+            origin=origin, captured_at=captured_at, metadata=self._metadata(metadata),
+        )
+        with self.store.atomic():
+            self._emit(principal, Op.EVIDENCE_RECORDED, ts, ev.to_dict())
+        return ev
+
+    def attach_evidence(
+        self, principal: Principal, *, evidence_id: str, to_claim: str,
+        relation: str = EvidenceRelation.SUPPORTS.value,
+    ) -> None:
+        """Link evidence to a claim with a TYPED relation. 'attached' is not 'supports' — a piece
+        of evidence may CONTRADICT/WEAKEN a claim (§6). Requires read access to BOTH."""
+        principal = _require_principal(principal)
+        principal.require("evidence.attach")
+        EvidenceRelation(relation)
+        claim = self._ref_readable(principal, to_claim, what="claim")
+        ev = self._ref_readable(principal, evidence_id, what="evidence")
+        if claim.get("kind") != "claim":
+            raise ValidationError(f"{to_claim} is not a claim")
+        if ev.get("kind") != "evidence":
+            raise ValidationError(f"{evidence_id} is not evidence")
+        ts = self._now()
+        with self.store.atomic():
+            self._emit(principal, Op.EVIDENCE_ATTACHED, ts, {
+                "claim_id": to_claim, "evidence_id": evidence_id, "relation": relation,
+            })
+
+    def review_claim(
+        self, principal: Principal, claim_id: str, *, verdict: str,
+        rationale: str | None = None, evidence_refs: Iterable[str] | None = None,
+    ) -> Review:
+        """Record ONE reviewer's individual assessment. Verdicts are preserved verbatim; majority
+        is not truth (§9). Requires read access to the claim + capability (§17). Self-review is
+        allowed but disclosed (reviewer == claimant is visible); it cannot itself accept (§32)."""
+        principal = _require_principal(principal)
+        Verdict(verdict)
+        cap = {"confirm": "claim.confirm", "dispute": "claim.dispute"}.get(verdict, "claim.review")
+        principal.require(cap)
+        claim = self._ref_readable(principal, claim_id, what="claim")
+        if claim.get("kind") != "claim":
+            raise ValidationError(f"{claim_id} is not a claim")
+        refs = tuple(evidence_refs or ())
+        for r in refs:
+            self._ref_readable(principal, r, what="evidence")
+        if rationale is not None:
+            rationale = self._str(rationale, "rationale", max_len=self.limits.max_text)
+        ts = self._now()
+        # a review inherits the claim's audience so its visibility tracks the claim exactly
+        review = Review(
+            **self._envelope(principal, "review", new_id("rev"), ts,
+                             spaces=tuple(claim.get("spaces", ()))),
+            claim_id=claim_id, verdict=verdict, rationale=rationale, evidence_refs=refs,
+        )
+        with self.store.atomic():
+            self._emit(principal, Op.CLAIM_REVIEWED, ts, review.to_dict())
+        return review
+
+    def accept_claim(
+        self, principal: Principal, claim_id: str, *, reason: str | None = None
+    ) -> None:
+        """Governed acceptance of a claim as knowledge — a policy decision, NOT a vote (§18). Needs
+        the ``knowledge.accept`` capability; the policy port decides. A claimant cannot accept their
+        own claim (§32, DENY self-acceptance). History and any coexisting dispute are preserved."""
+        self._govern(principal, claim_id, Op.CLAIM_ACCEPTED, "accept", reason)
+
+    def reject_claim(
+        self, principal: Principal, claim_id: str, *, reason: str | None = None
+    ) -> None:
+        """Governed rejection (mirror of accept). The claim remains on record (never deleted)."""
+        self._govern(principal, claim_id, Op.CLAIM_REJECTED, "reject", reason)
+
+    def _govern(self, principal: Principal, claim_id: str, op: str, action: str,
+                reason: str | None) -> None:
+        principal = _require_principal(principal)
+        principal.require("knowledge.accept")
+        claim = self._ref_readable(principal, claim_id, what="claim")
+        if claim.get("kind") != "claim":
+            raise ValidationError(f"{claim_id} is not a claim")
+        if (claim.get("claimant") == principal.agent
+                and "admin" not in principal.capabilities):
+            raise AuthorizationError(f"{action} denied: a claimant cannot govern their own claim")
+        reviews = self._readable_reviews(principal, claim_id)
+        decision = self.policy(PolicyRequest(
+            action=action, principal_agent=principal.agent,
+            principal_caps=frozenset(principal.capabilities), claim=claim, reviews=reviews,
+            destination_space=(claim.get("spaces") or (None,))[0],
+        ))
+        if not decision.allow:
+            raise AuthorizationError(f"{action} denied by policy: {decision.reason}")
+        note = self._str(reason, "reason", max_len=self.limits.max_str, allow_none=True)
+        ts = self._now()
+        with self.store.atomic():
+            self._emit(principal, op, ts, {
+                "claim_id": claim_id, "reason": note or decision.reason,
+            })
+
+    # -- claim reads (belief, evidence, reviews, explain) --------------------
+    def _readable_reviews(self, principal: Principal, claim_id: str) -> list[dict[str, Any]]:
+        return self._readable(principal, (
+            r for r in self.store.objects(principal.tenant, principal.namespace, kind="review")
+            if r.get("claim_id") == claim_id
+        ))
+
+    def belief(self, principal: Principal, claim_id: str) -> dict[str, Any]:
+        """The DERIVED, explainable belief state of a claim (never a stored boolean, §10). Only the
+        reviews the caller may read contribute — belief is computed over authorized material."""
+        principal = _require_principal(principal)
+        principal.require("claim.read")
+        claim = self._ref_readable(principal, claim_id, what="claim")
+        if claim.get("kind") != "claim":
+            raise ValidationError(f"{claim_id} is not a claim")
+        meta = claim.get("metadata", {})
+        return derive_belief(
+            claim, self._readable_reviews(principal, claim_id),
+            accepted=meta.get("accepted"), rejected=meta.get("rejected"),
+        )
+
+    def claim_evidence(self, principal: Principal, claim_id: str) -> list[dict[str, Any]]:
+        """Evidence links for a claim, filtered to the evidence the caller may read (§15: a public
+        claim does not expose private evidence)."""
+        principal = _require_principal(principal)
+        principal.require("claim.read")
+        claim = self._ref_readable(principal, claim_id, what="claim")
+        out = []
+        for link in claim.get("metadata", {}).get("evidence_links", []):
+            ev = self.store.get_object(link.get("evidence"))
+            if ev is not None and self._can_read(principal, ev):
+                out.append({"evidence": ev["id"], "relation": link.get("relation"),
+                            "evidence_kind": ev.get("evidence_kind"), "uri": ev.get("uri"),
+                            "title": ev.get("title")})
+        return out
+
+    def explain_claim(self, principal: Principal, claim_id: str) -> dict[str, Any]:
+        """Full genealogy of a claim: claimant/source, evidence, reviews, belief, contradictions,
+        space, temporal — with authorization applied BEFORE traversal (the v0.4 explain leak stays
+        permanently closed: an unreadable ancestor/evidence/review is elided, never exposed)."""
+        principal = _require_principal(principal)
+        principal.require("claim.read")
+        claim = self._ref_readable(principal, claim_id, what="claim")
+        if claim.get("kind") != "claim":
+            raise ValidationError(f"{claim_id} is not a claim")
+        return {
+            "id": claim_id,
+            "statement": {"subject": claim.get("subject"), "predicate": claim.get("predicate"),
+                          "object": claim.get("object")},
+            "claimant": claim.get("claimant"),
+            "contributor_kind": claim.get("contributor_kind"),
+            "ingested_by": claim.get("owner"),
+            "source": self._scoped_source_view(principal, claim),
+            "evidence": self.claim_evidence(principal, claim_id),
+            "reviews": self._readable_reviews_view(principal, claim_id, claim.get("claimant")),
+            "contradictions": list(claim.get("contradicts", [])),
+            "belief": self.belief(principal, claim_id),
+            "space": (claim.get("spaces") or [None])[0],
+            "temporal": {"valid_from": claim.get("valid_from"), "valid_to": claim.get("valid_to"),
+                         "tx_from": claim.get("tx_from"), "tx_to": claim.get("tx_to"),
+                         "status": claim.get("status")},
+        }
+
+    def _readable_reviews_view(
+        self, principal: Principal, claim_id: str, claimant: str | None
+    ) -> list[dict[str, Any]]:
+        # self_review is DISCLOSED, not hidden (§ self-review is allowed with disclosure): a review
+        # authored by the claim's own claimant is flagged so belief can be read with that in mind.
+        return [
+            {"reviewer": r.get("owner"), "verdict": r.get("verdict"),
+             "rationale": r.get("rationale"), "at": r.get("created_at"),
+             "self_review": claimant is not None and r.get("owner") == claimant}
+            for r in self._readable_reviews(principal, claim_id)
+        ]
+
+    # -- placement helper reused by claims/evidence -------------------------
+    def _resolve_placement(self, principal: Principal, space: str | None) -> tuple[str, ...]:
+        """Resolve an optional destination space to a placement tuple. None -> PRIVATE (owner-only,
+        the fail-closed default). A named space must exist and be reachable by the caller."""
+        if space is None:
+            return ()
+        dest_sp = self._load_space(principal, space)
+        dest_vis = resolve_visibility(dest_sp.get("visibility"))
+        reachable = (
+            dest_sp.get("owner") == principal.agent
+            or self._is_member(space, principal.agent)
+            or dest_vis >= Visibility.ORGANIZATION
+            or "admin" in principal.capabilities
+        )
+        if not reachable:
+            raise AuthorizationError(f"cannot create into space {space!r}: no access")
+        if dest_vis >= Visibility.ORGANIZATION and "admin" not in principal.capabilities:
+            principal.require("knowledge.promote")  # placing directly into ORG+ needs the gate
+        return (space,)
+
+    def _ref_readable(self, principal: Principal, ref_id: str, *, what: str) -> dict[str, Any]:
+        """Load an object the caller must be able to READ (scope + space firewall). Refuses with
+        NotFoundError otherwise — no existence oracle across the space boundary (§17)."""
+        obj = self._ref_in_scope(principal, ref_id, what=what)
+        if not self._can_read(principal, obj):
+            raise NotFoundError(f"{what} {ref_id!r} not found")
+        return obj
+
+    def _scoped_source_view(
+        self, principal: Principal, obj: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """A source view only if the source is readable in the object's scope (never leak a
+        cross-scope source's uri/trust — the B-06 rule, applied to claims)."""
+        src_id = obj.get("source")
+        if not src_id:
+            return None
+        src = self.store.get_object(src_id)
+        if src is None or not self._can_read(principal, src):
+            return None
+        return {"id": src["id"], "uri": src.get("uri"), "trust": src.get("trust")}
 
     # ======================================================================
     # retrieval & explanation

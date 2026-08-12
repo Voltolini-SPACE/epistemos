@@ -6,6 +6,18 @@ package pulls in only the standard library.
 
 from __future__ import annotations
 
+from .claims import (
+    BeliefState,
+    Claim,
+    ClaimStatus,
+    ContributorKind,
+    Evidence,
+    EvidenceKind,
+    EvidenceRelation,
+    Review,
+    Verdict,
+)
+from .claims.policy import LocalDefaultPolicy, Policy, PolicyDecision, PolicyRequest
 from .core import Engine, EngineLimits
 from .errors import (
     AuthorizationError,
@@ -38,7 +50,7 @@ from .retrieval import Retriever, Weights
 from .spaces import KnowledgeSpace, Visibility
 from .storage import MemoryStore, SQLiteStore, Store, open_store
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "__version__",
@@ -60,6 +72,20 @@ __all__ = [
     # knowledge spaces (EPISTEMOS-04)
     "KnowledgeSpace",
     "Visibility",
+    # collaborative claims (EPISTEMOS-05)
+    "Claim",
+    "Evidence",
+    "Review",
+    "ClaimStatus",
+    "BeliefState",
+    "Verdict",
+    "EvidenceRelation",
+    "EvidenceKind",
+    "ContributorKind",
+    "Policy",
+    "PolicyRequest",
+    "PolicyDecision",
+    "LocalDefaultPolicy",
     # storage
     "Store",
     "MemoryStore",

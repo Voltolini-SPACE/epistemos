@@ -9,9 +9,9 @@ suite against the copy, classify by pytest **exit code** (mission §32). Reprodu
   bearing predicate), so the target is `SURVIVED == 0`.
 
 ```
-MUTANTS_TOTAL              = 32
-MUTANTS_NON_EQUIVALENT     = 32   (all curated mutants change behavior)
-MUTANTS_KILLED            = 32
+MUTANTS_TOTAL              = 39
+MUTANTS_NON_EQUIVALENT     = 39   (all curated mutants change behavior)
+MUTANTS_KILLED            = 39
 MUTANTS_SURVIVED          = 0
 INVALID_MUTATIONS         = 0
 CRITICAL_NON_EQUIVALENT_SURVIVED = 0
@@ -51,6 +51,13 @@ CRITICAL_NON_EQUIVALENT_SURVIVED = 0
 | `spaces_promote_cap_removed` | space-promote | **KILLED** | pytest rc=1 | promotion to ORG+ requires the knowledge.promote capability (§11) |
 | `spaces_search_authorize_removed` | space-retrieval | **KILLED** | pytest rc=1 | unauthorized candidates dropped before scoring (§12) |
 | `spaces_grant_active_ignored` | space-revocation | **KILLED** | pytest rc=1 | a revoked (inactive) grant denies access (§22) |
+| `claim_self_acceptance_removed` | claim-governance | **KILLED** | pytest rc=1 | a claimant cannot govern their own claim into truth (§32) |
+| `claim_accept_cap_removed` | claim-truth-gate | **KILLED** | pytest rc=1 | acceptance requires the non-default knowledge.accept capability |
+| `claim_evidence_readability_removed` | visibility-composition | **KILLED** | pytest rc=1 | a public claim never exposes private evidence (§15) |
+| `claim_ref_readable_oracle` | claim-firewall | **KILLED** | pytest rc=1 | a claim outside the caller's spaces is invisible (no oracle §17) |
+| `claim_review_space_inherit_removed` | review-leak | **KILLED** | pytest rc=1 | a review inherits the claim's audience (REVIEW_SPACE_LEAK=0) |
+| `belief_dispute_ignored` | belief-derivation | **KILLED** | pytest rc=1 | one live dispute makes belief DISPUTED — majority is not truth (§9) |
+| `belief_governance_hides_dispute` | belief-audit | **KILLED** | pytest rc=1 | governed acceptance still records a coexisting dispute (§10) |
 
 **MUTATION_CRITICAL = PASS**
 
