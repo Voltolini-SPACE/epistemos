@@ -54,6 +54,7 @@ async function inspect(id, kind) {
   let node;
   if (kind === "claim") node = await S.claimDetail(id);
   else if (kind === "evidence") node = await S.evidenceDetail(id);
+  else if (kind === "decision") node = await S.decisionDetail(id);
   else { const d = await api.explain(id).catch((e) => ({ __err: e })); node = d.__err ? S.errState(d.__err)
     : el("div", {}, el("h2", { text: kind || "object" }), el("pre", { class: "mono", style: "white-space:pre-wrap;font-size:12px", text: JSON.stringify(d, null, 2) })); }
   mount(panel, el("div", { style: "padding:24px" },

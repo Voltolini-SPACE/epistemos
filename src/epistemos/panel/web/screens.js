@@ -240,6 +240,39 @@ export async function evidenceDetail(id) {
     ...d.contradicts.map((s) => el("div", { class: "b-row", onclick: () => window.__panel.inspect(s.claim, "claim") }, el("span", { class: "badge v-dispute", text: s.relation }), el("span", { text: s.label }))));
 }
 
+// ---------- DECISION LINEAGE ----------
+export async function decisionDetail(id) {
+  const d = await guard(() => api.explain(id));
+  if (d.__err) return errState(d.__err);
+  const box = el("div", {},
+    el("div", { class: "row" }, kindDot("decision"), el("span", { style: "flex:1" }),
+      d.reversible === false ? el("span", { class: "badge b-rejected", text: "IRREVERSIBLE" })
+        : el("span", { class: "badge b-supported", text: "REVERSIBLE" })),
+    el("h2", { style: "margin:10px 0", text: d.statement || "Decision" }),
+    el("dl", { class: "kv" },
+      el("dt", { text: "outcome" }), el("dd", { class: "mono", text: d.outcome || "—" }),
+      el("dt", { text: "alternatives" }),
+      el("dd", { text: (d.alternatives || []).join(", ") || "none recorded" })));
+  // lineage: DECISION → evidence (facts/claims) → source → OUTCOME
+  box.append(el("div", { class: "divider" }), el("h3", { text: "Why this decision was made" }));
+  const tree = el("div", { class: "belief-tree" });
+  for (const ev of d.evidence || []) {
+    const st = ev.statement || {};
+    const label = ev.title || [st.subject, st.predicate, st.object].filter(Boolean).join(" ")
+      || shortId(ev.id);
+    tree.append(el("div", { class: "b-row", style: "cursor:pointer",
+      onclick: () => window.__panel.inspect(ev.id, ev.kind) },
+      el("span", { class: "badge v-confirm", text: "decided from" }),
+      el("span", {}, el("b", { text: label }),
+        ev.source ? el("span", { class: "sub", style: "color:var(--fg-3)", text: " · " + (ev.source.uri || ev.source.id) }) : null)));
+  }
+  if (!(d.evidence || []).length) tree.append(el("div", { class: "b-row", text: "No recorded lineage." }));
+  tree.append(el("div", { class: "belief-out" }, el("span", { text: "⇒" }),
+    el("span", { class: "badge b-accepted", text: "OUTCOME: " + (d.outcome || "recorded") })));
+  box.append(tree);
+  return box;
+}
+
 // ---------- EXPLAIN MODE ----------
 export async function explain(ctx, id) {
   const view = el("div", { class: "view" });
