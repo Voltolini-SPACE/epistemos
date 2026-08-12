@@ -51,6 +51,7 @@ _WEB_DIR = Path(__file__).resolve().parent.parent / "panel" / "web"
 _SESSION_COOKIE = "eps_session"
 _STREAM_POLL_SECONDS = 1.0
 _STREAM_HEARTBEAT_SECONDS = 15.0
+_MAX_BODY = 1_000_000  # 1 MB body cap (over-limit closes the connection, never drained)
 
 # a strict, self-only CSP — the panel is fully self-contained, so nothing external is permitted.
 _CSP = (
@@ -70,6 +71,16 @@ def _status_for(exc: Exception) -> int:
         if isinstance(exc, typ):
             return code
     return 500
+
+
+def _safe_int(value: Any, default: int, name: str) -> int:
+    """Parse an int from a JSON body value, mapping garbage to a 400 with a safe message."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"field {name!r} must be an integer") from exc
 
 
 class PanelHTTPServer(ThreadingHTTPServer):
@@ -104,9 +115,14 @@ def make_panel_server(
 class _PanelHandler(BaseHTTPRequestHandler):
     server_version = "epistemos-panel/1.0"
     protocol_version = "HTTP/1.1"
+    _body_consumed: bool = False
 
     def log_message(self, *args: Any) -> None:  # silence stderr noise
         return
+
+    def version_string(self) -> str:
+        # do not advertise the Python runtime version in the Server header (fingerprinting)
+        return self.server_version
 
     # -- helpers ------------------------------------------------------------
     def _srv(self) -> PanelHTTPServer:
@@ -155,23 +171,72 @@ class _PanelHandler(BaseHTTPRequestHandler):
     def _fail(self, exc: Exception) -> None:
         code = _status_for(exc)
         kind = type(exc).__name__ if isinstance(exc, EpistemosError) else "InternalError"
-        # error bodies never distinguish forbidden-vs-absent for a specific id (no oracle)
-        msg = str(exc) if code not in (401, 403, 404) else _SAFE_ERROR.get(code, "error")
+        # Detailed message only for developer-authored client errors (safe, no internals).
+        # 401/403/404 get a fixed message (no forbidden-vs-absent oracle); 5xx never echoes
+        # str(exc) (a raw "invalid literal for int()" / "'id'" is internal detail — F1/leak).
+        msg = str(exc) if code in _DETAILED_ERROR else _SAFE_ERROR.get(code, "error")
         self._send_json(code, {"error": kind if code < 500 else "InternalError", "message": msg})
 
     def _body(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError as exc:
+            self.close_connection = True  # unparseable framing — do not keep-alive
+            raise ValidationError("invalid Content-Length") from exc
         if length <= 0:
             return {}
-        if length > 1_000_000:
+        if length > _MAX_BODY:
+            # do not read (let alone drain) an over-limit body — close instead, so the undrained
+            # bytes can never be re-parsed as a smuggled request (hardening F3).
+            self.close_connection = True
             raise ValidationError("request body too large")
+        raw = self.rfile.read(length)
+        self._body_consumed = True  # body now fully off the socket; no drain needed
         try:
-            data = json.loads(self.rfile.read(length))
+            data = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise ValidationError(f"invalid JSON body: {exc}") from exc
+            # generic message — do not echo the parser's line/column detail back over the wire
+            raise ValidationError("invalid JSON body") from exc
         if not isinstance(data, dict):
             raise ValidationError("body must be a JSON object")
         return data
+
+    def _drain_body(self) -> None:
+        """Consume any unread request body so a keep-alive connection stays framed. Without this,
+        an error raised before ``_body()`` leaves the POST payload in the socket and the next
+        request on the same connection is parsed starting mid-body — HTTP request smuggling
+        (hardening F3, the parity fix of REST B-05)."""
+        try:
+            remaining = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self.close_connection = True
+            return
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
+    # -- safe query-param parsing (hardening F1) ----------------------------
+    @staticmethod
+    def _qint(q: dict[str, str], key: str, default: int) -> int:
+        """Parse an integer query param, mapping garbage to a 400 with a SAFE message (never a raw
+        ``int()`` ValueError → 500 that echoes internal Python text)."""
+        raw = q.get(key)
+        if raw is None or raw == "":
+            return default
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(f"parameter {key!r} must be an integer") from exc
+
+    @staticmethod
+    def _qreq(q: dict[str, str], key: str) -> str:
+        """Fetch a required query param, mapping absence to a 400 (never a KeyError → 500)."""
+        val = q.get(key)
+        if val is None or val == "":
+            raise ValidationError(f"missing required parameter {key!r}")
+        return val
 
     # -- routing ------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802
@@ -191,22 +256,29 @@ class _PanelHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        self._body_consumed = False  # _body() sets True the moment the body is read off the socket
         try:
             if path == "/api/session":
-                self._session()
+                self._session()  # reads + consumes the body itself
                 return
             if path == "/api/search":
-                principal = self._principal()
+                principal = self._principal()  # may raise 401 BEFORE the body is read
                 body = self._body()
                 self._send_json(200, self._srv().panel.search(
                     principal, text=body.get("text"), subject=body.get("subject"),
                     predicate=body.get("predicate"), object=body.get("object"),
                     kinds=tuple(body["kinds"]) if body.get("kinds") else None,
-                    limit=int(body.get("limit", 20)),
+                    limit=_safe_int(body.get("limit"), 20, "limit"),
                     believed_only=bool(body.get("believed_only", False))))
                 return
             self._send_json(404, {"error": "NotFound", "message": "no such route"})
         except Exception as exc:  # noqa: BLE001
+            # drain any unread POST body first, so leftover bytes cannot be re-parsed as a smuggled
+            # request on a keep-alive connection (hardening F3). If _body() already read the bytes
+            # (e.g. a JSON parse error), or an over-limit body already closed the connection, there
+            # is nothing to drain.
+            if not self._body_consumed and not self.close_connection:
+                self._drain_body()
             self._fail(exc)
 
     def _session(self) -> None:
@@ -251,27 +323,28 @@ class _PanelHandler(BaseHTTPRequestHandler):
             return p.counts(principal)
         if path == "/api/graph":
             return p.knowledge_graph(
-                principal, focus=q.get("focus") or None, hops=int(q.get("hops", 1)),
+                principal, focus=q.get("focus") or None, hops=self._qint(q, "hops", 1),
                 kinds=q["kinds"].split(",") if q.get("kinds") else None,
-                limit=int(q.get("limit", 1500)))
+                limit=self._qint(q, "limit", 1500))
         if path == "/api/graph/expand":
-            return p.expand(principal, q["node"])
+            return p.expand(principal, self._qreq(q, "node"))
         if path == "/api/list":
             return p.list_objects(principal, kind=q.get("kind", "claim"),
-                                  limit=int(q.get("limit", 50)), offset=int(q.get("offset", 0)))
+                                  limit=self._qint(q, "limit", 50),
+                                  offset=self._qint(q, "offset", 0))
         if path == "/api/claim":
-            return p.claim_detail(principal, q["id"])
+            return p.claim_detail(principal, self._qreq(q, "id"))
         if path == "/api/belief":
-            return p.belief(principal, q["id"])
+            return p.belief(principal, self._qreq(q, "id"))
         if path == "/api/evidence":
-            return p.evidence_detail(principal, q["id"])
+            return p.evidence_detail(principal, self._qreq(q, "id"))
         if path == "/api/explain":
-            return p.explain(principal, q["id"])
+            return p.explain(principal, self._qreq(q, "id"))
         if path == "/api/activity":
-            return p.activity(principal, since_seq=int(q.get("since", 0)),
-                              limit=int(q.get("limit", 200)))
+            return p.activity(principal, since_seq=self._qint(q, "since", 0),
+                              limit=self._qint(q, "limit", 200))
         if path == "/api/asof":
-            return p.as_of(principal, at_tx=q["at"],
+            return p.as_of(principal, at_tx=self._qreq(q, "at"),
                            kinds=q["kinds"].split(",") if q.get("kinds") else None)
         if path == "/api/spaces":
             return p.spaces(principal)
@@ -282,7 +355,7 @@ class _PanelHandler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return p.health(principal)
         if path == "/api/search":
-            return p.search(principal, text=q.get("text"), limit=int(q.get("limit", 20)))
+            return p.search(principal, text=q.get("text"), limit=self._qint(q, "limit", 20))
         raise NotFoundError("no such route")
 
     # -- SSE stream ---------------------------------------------------------
@@ -351,7 +424,12 @@ class _PanelHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-_SAFE_ERROR = {401: "authentication required", 403: "not authorized", 404: "not found"}
+_SAFE_ERROR = {
+    401: "authentication required", 403: "not authorized", 404: "not found",
+    500: "internal error",
+}
+# status codes whose message is developer-authored and safe to return verbatim
+_DETAILED_ERROR = {400, 409, 422}
 
 
 _RouteHandler = Callable[..., Any]
