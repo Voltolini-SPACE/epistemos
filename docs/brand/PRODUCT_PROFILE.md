@@ -66,5 +66,5 @@ query, explainable to retrieve, and tamper-evident to trust.
 - `explain()` provenance: **~1.9 s → ~0.05 ms at 100k (~33,800×)** via a provenance index (v0.3).
 - 700 tests · mutation 25/25 killed · adversarially audited (43 findings fixed) · zero runtime deps.
 
-**LICENSE:** Apache-2.0 · **REPO:** https://github.com/Voltolini-SPACE/epistemos ·
+**LICENSE:** MIT · **REPO:** https://github.com/Voltolini-SPACE/epistemos ·
 **SITE:** https://voltolini.space/epistemos

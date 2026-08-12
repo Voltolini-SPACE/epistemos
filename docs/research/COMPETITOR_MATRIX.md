@@ -15,7 +15,7 @@ Census date **2026-08-11**. Cells are **MEASURED** from repos/licenses/docs unle
 | **Letta/MemGPT** | letta-ai/letta | Apache-2.0 | Python | stateful agent OS, memory-as-tools |
 | **TrustGraph** | trustgraph-ai/trustgraph | Apache-2.0 | Python | PROV-O KG over broker+Cassandra+Qdrant |
 | **ABI / Naas** | jupyter-naas/abi | MIT | Python | BFO-typed graph, hexagonal ports |
-| **EPISTEMOS** | (this repo) | Apache-2.0 | Python (stdlib-only) | event-sourced bitemporal core + ports |
+| **EPISTEMOS** | (this repo) | MIT | Python (stdlib-only) | event-sourced bitemporal core + ports |
 
 ## Capability comparison
 

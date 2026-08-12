@@ -34,6 +34,10 @@ def test_confirm_rejects_negative_delta(engine: Engine) -> None:
     s = engine.add_source(ALICE, uri="mem://s", trust=0.9)
     f = engine.assert_fact(ALICE, subject="A", predicate="p", object="X",
                            source=s.id, confidence=0.9)
+    # EPISTEMOS-04: cross-agent confirm requires Bob to see the fact — share it into a team space.
+    space = engine.create_space(ALICE, name="team", visibility="TEAM")
+    engine.grant_capability(ALICE, space_id=space.id, agent="bob")
+    engine.share(ALICE, f.id, into=space.id)
     sb = engine.add_source(BOB, uri="mem://b", trust=0.9)
     with pytest.raises(ValidationError, match="non-negative"):
         engine.confirm(BOB, f.id, source=sb.id, delta_confidence=-1.0)

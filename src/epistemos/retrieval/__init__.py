@@ -16,6 +16,7 @@ Every result carries ``score``, ``score_components``, ``source``, ``temporal_sta
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -31,6 +32,9 @@ __all__ = ["Retrieved", "Weights", "LegacyScanRetriever", "IndexedRetriever", "R
 # Retrieve up to this many lexical candidates by relevance, then re-rank by the full score.
 # Bounds recall for very high-frequency terms (documented trade-off, ADR-017).
 CANDIDATE_POOL = 500
+
+# Control-plane objects (spaces, grants) are not knowledge and never appear in knowledge queries.
+_META_KINDS = frozenset({"space", "grant"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +216,7 @@ class LegacyScanRetriever(_BaseRetriever):
         object: str | None = None, kinds: tuple[str, ...] | None = None,  # noqa: A002
         limit: int = 10, believed_only: bool = False,
         at_tx: str | datetime | None = None, at_valid: str | datetime | None = None,
+        authorize: Callable[[dict[str, Any]], bool] | None = None,
     ) -> list[Retrieved]:
         now = now_utc()
         query_terms = self._query_terms(text)
@@ -219,6 +224,12 @@ class LegacyScanRetriever(_BaseRetriever):
 
         candidates: list[dict[str, Any]] = []
         for obj in store.objects(tenant, namespace):
+            if obj.get("kind") in _META_KINDS:
+                continue  # spaces/grants are control-plane, not knowledge
+            # Space firewall FIRST (EPISTEMOS-04): an unauthorized candidate never enters the
+            # corpus, so it cannot affect df/idf, scores, ranking or the result count.
+            if authorize is not None and not authorize(obj):
+                continue
             if kinds is not None and obj.get("kind") not in kinds:
                 continue
             if believed_only and obj.get("kind") == "fact" and not believed(obj, at_tx):
@@ -281,6 +292,7 @@ class IndexedRetriever(_BaseRetriever):
         object: str | None = None, kinds: tuple[str, ...] | None = None,  # noqa: A002
         limit: int = 10, believed_only: bool = False,
         at_tx: str | datetime | None = None, at_valid: str | datetime | None = None,
+        authorize: Callable[[dict[str, Any]], bool] | None = None,
     ) -> list[Retrieved]:
         now = now_utc()
         trust_of = self._trust_lookup(store)
@@ -293,6 +305,8 @@ class IndexedRetriever(_BaseRetriever):
                 obj = store.get_object(obj_id)
                 if obj is None or obj.get("tenant") != tenant or obj.get("namespace") != namespace:
                     continue  # defense-in-depth: never surface an out-of-scope object
+                if authorize is not None and not authorize(obj):
+                    continue  # space firewall before scoring (EPISTEMOS-04)
                 if kinds is not None and obj.get("kind") not in kinds:
                     continue
                 if believed_only and obj.get("kind") == "fact" and not believed(obj, at_tx):
@@ -307,6 +321,10 @@ class IndexedRetriever(_BaseRetriever):
                                  object=object) if (subject or predicate or object) \
                 else list(store.objects(tenant, namespace))
             for obj in source:
+                if obj.get("kind") in _META_KINDS:
+                    continue
+                if authorize is not None and not authorize(obj):
+                    continue  # space firewall before scoring (EPISTEMOS-04)
                 if kinds is not None and obj.get("kind") not in kinds:
                     continue
                 if believed_only and obj.get("kind") == "fact" and not believed(obj, at_tx):

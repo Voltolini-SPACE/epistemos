@@ -37,8 +37,8 @@ no transitive runtime advisories, nothing to pin.
 | typing-extensions | 4.16.0 | PSF-2.0 | (mypy transitive) |
 | pathspec | 1.1.1 | MPL-2.0 | (mypy transitive) |
 
-All dev/build licenses are permissive and Apache-2.0-compatible (MIT / BSD / Apache-2.0 / PSF /
-MPL-2.0). None are copyleft in a way that affects EPISTEMOS's Apache-2.0 distribution, and none
+All dev/build licenses are permissive and MIT-compatible (MIT / BSD / Apache-2.0 / PSF /
+MPL-2.0). None are copyleft in a way that affects EPISTEMOS's MIT distribution, and none
 ship in the runtime artifact.
 
 ### Environment note (honest disclosure)

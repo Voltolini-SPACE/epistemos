@@ -38,5 +38,5 @@ own future mission (`EPISTEMOS-NOMOS-01`, etc.).
 
 ## Supply chain / license
 
-Apache-2.0. Zero runtime dependencies ⇒ no runtime supply chain. See
+MIT. Zero runtime dependencies ⇒ no runtime supply chain. See
 [`../security/LICENSE_MATRIX.md`](../security/LICENSE_MATRIX.md), `DEPENDENCY_INVENTORY.md`, `SBOM.md`.

@@ -16,9 +16,16 @@
 | [012](ADR-012-external-apis.md) | External APIs: thin adapters, no implicit authority |
 | [013](ADR-013-adapter-architecture.md) | Adapter architecture: CORE ← ADAPTER, never the reverse |
 | [014](ADR-014-export-format.md) | Export format: versioned JSON event log, no pickle |
-| [015](ADR-015-licensing-strategy.md) | Licensing strategy: Apache-2.0, zero runtime deps, clean-room |
+| [015](ADR-015-licensing-strategy.md) | Licensing strategy: Apache-2.0 (superseded by 027), zero runtime deps, clean-room |
 | [016](ADR-016-search-index-architecture.md) | Search index architecture: rebuildable projection behind a port (v0.2) |
 | [017](ADR-017-fts-implementation.md) | FTS implementation: SQLite FTS5, safe query, parity differences (v0.2) |
 | [018](ADR-018-index-consistency.md) | Index consistency: transactional with the projection (v0.2) |
 | [019](ADR-019-index-recovery-fallback.md) | Index recovery & fallback: core never depends on the index (v0.2) |
 | [020](ADR-020-hybrid-retrieval-scoring.md) | Hybrid retrieval scoring: explicit, optional, no hidden formula (v0.2) |
+| [021](ADR-021-query-constraints-filter.md) | A query constraint filters, on both retrieval paths (v0.3) |
+| [022](ADR-022-provenance-index.md) | Provenance activity index: explain() stops scanning the ledger (v0.3) |
+| [023](ADR-023-unicode-tokenizer.md) | Opt-in unicode search: SQLite is the single tokenizer authority (v0.3) |
+| [024](ADR-024-knowledge-spaces.md) | Knowledge Spaces: visibility lattice orthogonal to tenant (v0.4) |
+| [025](ADR-025-capability-authorization.md) | Capability-based authorization; roles are capability sets (v0.4) |
+| [026](ADR-026-authorized-retrieval.md) | Authorized retrieval: candidate-boundary-first read firewall (v0.4) |
+| [027](ADR-027-mit-license.md) | Relicense to MIT (v0.4) |

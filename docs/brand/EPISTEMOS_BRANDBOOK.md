@@ -2,7 +2,7 @@
 
 <img src="assets/logo-horizontal.svg" alt="EPISTEMOS" width="360"/>
 
-`BRAND_VERSION = 1.0` · Apache-2.0 · An independent product showcased on voltolini.space.
+`BRAND_VERSION = 1.0` · MIT · An independent product showcased on voltolini.space.
 
 ---
 

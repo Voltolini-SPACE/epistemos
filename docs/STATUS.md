@@ -120,3 +120,41 @@ Adversarial re-audit of v0.2.0, defect fixes, and a measured capability uplift. 
 | NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | no EPISTEMOS-caused change vs ETAPA-0 baseline |
 
 `STATUS_FINAL = EPISTEMOS_V0_3_PASS` — tag `epistemos-v0.3.0` (v0.1.0 and v0.2.0 unchanged).
+
+---
+
+## EPISTEMOS-04 (KNOWLEDGE SPACES & CAPABILITY MODEL) gates
+
+Adds a visibility lattice and capability-based authorization so a user can share *selected*
+knowledge without exposing the rest. Design: [ADR-024](adr/ADR-024-knowledge-spaces.md),
+[ADR-025](adr/ADR-025-capability-authorization.md), [ADR-026](adr/ADR-026-authorized-retrieval.md);
+model docs in [`docs/spaces/`](spaces/KNOWLEDGE_SPACE_MODEL.md); report
+[`EPISTEMOS_V0_4_FINAL_REPORT.md`](EPISTEMOS_V0_4_FINAL_REPORT.md).
+
+| Gate | State | Evidence |
+|------|-------|----------|
+| SOURCE_CHECK | ✅ | `import epistemos` → 0.4.0 from repo src |
+| BASELINE_REGRESSION (v0.1–v0.3) | ✅ | full suite green; single-agent v0.3 byte-identical |
+| NEW_TESTS | ✅ | `tests/spaces/` (8 files) |
+| RUFF / MYPY_STRICT | ✅ | `ruff check src tests` clean; `mypy --strict` clean (29 files) |
+| KNOWLEDGE_SPACES | ✅ | ADR-024; `test_spaces_model.py` |
+| CAPABILITY_ENFORCEMENT | ✅ | ADR-025; `test_capability_model.py`, `test_authz_unit.py` |
+| PRIVATE_DEFAULT | ✅ | `spaces == ()` → PRIVATE; `test_spaces_model.py` |
+| PRIVATE_TO_PUBLIC_LEAK = 0 | ✅ | `test_private_public_invariant.py` (full adversarial battery) |
+| AUTHORIZED_RETRIEVAL | ✅ | ADR-026; candidate-boundary-first; score/count non-leak |
+| FTS / GRAPH / PROVENANCE SPACE_ISOLATION | ✅ | `test_space_export_graph.py`, provenance elision |
+| EXPORT_IMPORT_SPACE_SAFETY | ✅ | `test_space_export_graph.py` (scoped export, crafted import) |
+| TENANT_ISOLATION | ✅ | unchanged from v0.3 + `test_authz_unit.py` |
+| LEDGER_INTEGRITY / PROJECTION_REBUILD / INDEX_REBUILD | ✅ | freeze proofs; `test_space_chaos.py` |
+| RACE (30 cycles) | ✅ | `test_space_race.py` (share vs revoke, concurrent grants) |
+| CHAOS | ✅ | `test_space_chaos.py` (recovery, index corruption, promotion) |
+| MUTATION_NON_EQUIVALENT_SURVIVED = 0 | ✅ | 32/32 killed (7 new spaces boundary mutants) |
+| PERFORMANCE | ✅ | `benchmarks/EPISTEMOS_04_AUTHZ_BENCHMARK.md` (overhead disclosed) |
+| BACKWARD_COMPATIBILITY | ✅ | `test_backward_compat.py` (legacy → PRIVATE, never PUBLIC) |
+| ZERO_EGRESS / LOCAL_FIRST | ✅ | freeze proof (0 socket ops full lifecycle incl. spaces) |
+| MIT_LICENSE_MIGRATION | ✅ | ADR-027; LICENSE/pyproject/docs = MIT; APACHE_REFERENCE_RESIDUAL=0 |
+| DOCS / ADRS (024–027) | ✅ | `docs/adr/`, `docs/spaces/`, benchmark, report |
+| WORKTREE_CLEAN | ✅ | empty at freeze |
+| NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | no EPISTEMOS-caused change vs baseline |
+
+`STATUS_FINAL = EPISTEMOS_V0_4_PASS` — tag `epistemos-v0.4.0` (v0.1.0/v0.2.0/v0.3.0 unchanged).

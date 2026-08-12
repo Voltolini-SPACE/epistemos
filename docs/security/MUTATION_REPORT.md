@@ -9,9 +9,9 @@ suite against the copy, classify by pytest **exit code** (mission §32). Reprodu
   bearing predicate), so the target is `SURVIVED == 0`.
 
 ```
-MUTANTS_TOTAL              = 25
-MUTANTS_NON_EQUIVALENT     = 25   (all curated mutants change behavior)
-MUTANTS_KILLED            = 25
+MUTANTS_TOTAL              = 32
+MUTANTS_NON_EQUIVALENT     = 32   (all curated mutants change behavior)
+MUTANTS_KILLED            = 32
 MUTANTS_SURVIVED          = 0
 INVALID_MUTATIONS         = 0
 CRITICAL_NON_EQUIVALENT_SURVIVED = 0
@@ -44,6 +44,13 @@ CRITICAL_NON_EQUIVALENT_SURVIVED = 0
 | `retrieval_source_scope` | tenant-isolation | **KILLED** | pytest rc=1 | source is never dereferenced across scope (B-06) |
 | `idx_verify_content_drift` | index-consistency | **KILLED** | pytest rc=1 | verify detects FTS content-cell corruption (B-01) |
 | `rest_none_principal` | auth-fail-closed | **KILLED** | pytest rc=1 | REST refuses a non-Principal from the auth resolver (B-01) |
+| `spaces_private_default_to_public` | spaces-fail-closed | **KILLED** | pytest rc=1 | absent visibility defaults PRIVATE, never PUBLIC (§5) |
+| `spaces_deny_to_allow` | space-tenant | **KILLED** | pytest rc=1 | read decision fails closed on tenant mismatch |
+| `spaces_owner_check_removed` | space-private | **KILLED** | pytest rc=1 | a private object is readable only by its owner |
+| `spaces_member_check_removed` | space-membership | **KILLED** | pytest rc=1 | TEAM access requires ownership or a granted membership |
+| `spaces_promote_cap_removed` | space-promote | **KILLED** | pytest rc=1 | promotion to ORG+ requires the knowledge.promote capability (§11) |
+| `spaces_search_authorize_removed` | space-retrieval | **KILLED** | pytest rc=1 | unauthorized candidates dropped before scoring (§12) |
+| `spaces_grant_active_ignored` | space-revocation | **KILLED** | pytest rc=1 | a revoked (inactive) grant denies access (§22) |
 
 **MUTATION_CRITICAL = PASS**
 
