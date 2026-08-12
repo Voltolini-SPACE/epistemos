@@ -1,6 +1,9 @@
 # ADR-015 — Licensing strategy: Apache-2.0, zero runtime deps, clean-room
 
-**Status:** Accepted (v0.1)
+**Status:** Superseded (license) by [ADR-027](ADR-027-mit-license.md) in v0.4 — EPISTEMOS is now
+distributed under the **MIT License**. The zero-runtime-deps and clean-room decisions in this ADR
+still stand; only the license choice changed. This ADR is retained as the historical record of the
+original Apache-2.0 rationale.
 
 ## Context
 EPISTEMOS is a new, original product (not a fork). It must be safely combinable with the intended

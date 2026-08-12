@@ -82,7 +82,7 @@ STATUS_FINAL         = EPISTEMOS_V0_1_PASS
 | QUALITY_CORPUS | ✅ | `test_quality_corpus.py` | 11 categories, deterministic |
 | REST / MCP / SDK | ✅ | `tests/integration/` | thin adapters, hostile MCP |
 | ADRS | ✅ | `docs/adr/ADR-001..015` | all with rejected alternatives |
-| LICENSES / CLEAN_ROOM | ✅ | `docs/security/LICENSE_MATRIX.md`, `SBOM.md` | Apache-2.0, 0 runtime deps, no copied code |
+| LICENSES / CLEAN_ROOM | ✅ | `docs/security/LICENSE_MATRIX.md`, `SBOM.md` | MIT (relicensed v0.4; Apache-2.0 at v0.1), 0 runtime deps, no copied code |
 
 ## Known limitations (non-blocking, disclosed — not masked)
 

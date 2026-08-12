@@ -38,7 +38,7 @@ python tools/mutation_harness.py       # critical-boundary mutation (0 survivors
 
 ## Licensing
 
-By contributing you agree your contributions are licensed under **Apache-2.0** (inbound = outbound).
+By contributing you agree your contributions are licensed under the **MIT License** (inbound = outbound).
 
 ## Security
 

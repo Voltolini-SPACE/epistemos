@@ -17,7 +17,7 @@ components** — the only executing non-project code is the Python standard libr
       "type": "library",
       "name": "epistemos",
       "version": "0.1.0",
-      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "licenses": [{ "license": { "id": "MIT" } }],
       "purl": "pkg:pypi/epistemos@0.1.0"
     },
     "properties": [

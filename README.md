@@ -8,7 +8,7 @@
   <a href="https://voltolini.space/epistemos">Website</a> ·
   <a href="docs/adr/README.md">Architecture (ADRs)</a> ·
   <a href="https://github.com/Voltolini-SPACE/epistemos/releases">Releases</a> ·
-  Apache-2.0 · Python ≥3.11 · <strong>zero runtime dependencies</strong>
+  MIT · Python ≥3.11 · <strong>zero runtime dependencies</strong>
 </p>
 
 ---
@@ -174,6 +174,6 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 
 ## License
 
-Apache-2.0. EPISTEMOS has **zero third-party runtime dependencies** by design (stdlib only).
+MIT. EPISTEMOS has **zero third-party runtime dependencies** by design (stdlib only).
 Clean-room implementation — not a fork, no copied code
 ([attestation](docs/security/LICENSE_MATRIX.md)).

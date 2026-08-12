@@ -2,15 +2,15 @@
 
 ## EPISTEMOS license
 
-**Apache-2.0** (`LICENSE`, `pyproject.toml: license = "Apache-2.0"`). See ADR-015 for the rationale
-(permissive, patent grant, compatible with the permissive tool/ecosystem, safe for the intended
-adapter integrations with NOMOS/Hermes/OpenClaw).
+**MIT License** (`LICENSE`, `pyproject.toml: license = "MIT"`). Relicensed from Apache-2.0 in v0.4
+(EPISTEMOS-04, owner decision — see ADR-027; ADR-015 records the original Apache-2.0 rationale).
+MIT is permissive and simple; the runtime has zero third-party code, so nothing constrains the choice.
 
 ## Compatibility of everything we depend on
 
-| Component | License | Runtime? | Compatible with Apache-2.0? |
+| Component | License | Runtime? | Compatible with MIT? |
 |-----------|---------|----------|:--:|
-| **epistemos runtime** | Apache-2.0 | — | — (this project) |
+| **epistemos runtime** | MIT | — | — (this project) |
 | Python stdlib | PSF-2.0 | yes (only runtime code) | ✔ |
 | hatchling (build) | MIT | no (build only) | ✔ |
 | pytest / ruff / mypy | MIT | no (dev only) | ✔ |
