@@ -77,12 +77,18 @@ def _activities_for(
     ]
 
 
-def _source_view(store: Store, source_id: str | None) -> dict[str, Any] | None:
+def _source_view(
+    store: Store, source_id: str | None, tenant: str, namespace: str
+) -> dict[str, Any] | None:
     if not source_id:
         return None
     src = store.get_object(source_id)
     if src is None:
         return {"id": source_id, "status": "missing"}
+    if src.get("tenant") != tenant or src.get("namespace") != namespace:
+        # a source pointer dangling into another scope is never dereferenced across the boundary
+        # (EPISTEMOS-03, B-06): report it as out-of-scope, never its uri/trust.
+        return {"id": source_id, "status": "out_of_scope"}
     return {
         "id": src["id"],
         "uri": src.get("uri"),
@@ -172,7 +178,7 @@ def explain(
             "believed": obj.get("tx_to") is None,
         }
 
-    node["source"] = _source_view(store, obj.get("source"))
+    node["source"] = _source_view(store, obj.get("source"), tenant, namespace)
     node["activities"] = _activities_for(store, tenant, namespace, obj_id, index=index)
 
     def _walk(ids: list[str]) -> list[dict[str, Any]]:

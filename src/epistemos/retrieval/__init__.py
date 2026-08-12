@@ -140,13 +140,28 @@ def _why(comp: dict[str, float], temporal_state: dict[str, Any] | None) -> str:
     return "; ".join(bits) if bits else "matched query scope"
 
 
+def _source_in_scope(store: Store, obj: dict[str, Any]) -> dict[str, Any] | None:
+    """Fetch an object's backing source only if it is in the SAME scope as the object.
+
+    A source pointer that dangles into another tenant/namespace (crafted or imported state) must
+    never have its URI/trust dereferenced across the boundary (EPISTEMOS-03, B-06).
+    """
+    src_id = obj.get("source")
+    if not src_id:
+        return None
+    src = store.get_object(src_id)
+    if src is None:
+        return None
+    if src.get("tenant") != obj.get("tenant") or src.get("namespace") != obj.get("namespace"):
+        return None
+    return src
+
+
 def _build(store: Store, obj: dict[str, Any], total: float, comp: dict[str, float]) -> Retrieved:
     source_view = None
-    src_id = obj.get("source")
-    if src_id:
-        src = store.get_object(src_id)
-        if src is not None:
-            source_view = {"id": src["id"], "uri": src.get("uri"), "trust": src.get("trust")}
+    src = _source_in_scope(store, obj)
+    if src is not None:
+        source_view = {"id": src["id"], "uri": src.get("uri"), "trust": src.get("trust")}
     ts = _temporal_state(obj)
     return Retrieved(
         id=obj["id"], kind=obj.get("kind", "unknown"), score=round(total, 6),
@@ -167,16 +182,11 @@ class _BaseRetriever:
         ))
 
     def _trust_lookup(self, store: Store) -> Any:
-        cache: dict[str, float] = {}
-
+        # authority must not read trust across a scope boundary: a cross-tenant source pointer
+        # contributes zero authority, never the foreign source's trust (B-06).
         def trust_of(obj: dict[str, Any]) -> float:
-            src_id = obj.get("source")
-            if not src_id:
-                return 0.0
-            if src_id not in cache:
-                src = store.get_object(src_id)
-                cache[src_id] = float(src.get("trust", 0.0)) if src is not None else 0.0
-            return cache[src_id]
+            src = _source_in_scope(store, obj)
+            return float(src.get("trust", 0.0)) if src is not None else 0.0
 
         return trust_of
 

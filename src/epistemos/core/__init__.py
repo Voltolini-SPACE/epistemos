@@ -723,6 +723,13 @@ class Engine:
             raise ValidationError("delta_confidence must be numeric") from exc
         if not math.isfinite(delta):
             raise ValidationError("delta_confidence must be finite")
+        # confirm() is *corroboration*: it may only raise confidence. A negative delta would turn
+        # this additive, cross-agent primitive into a way to lower a rival's confidence and flip
+        # which fact is "current" (EPISTEMOS-03, B-03). To weaken belief, contradict or supersede.
+        if delta < 0.0:
+            raise ValidationError(
+                "delta_confidence must be non-negative (confirm only corroborates)"
+            )
         new_conf = max(0.0, min(1.0, float(obj.get("confidence", 1.0)) + delta))
         ts = self._now()
         with self.store.atomic():
@@ -749,7 +756,16 @@ class Engine:
                 return 0.0
             if src_id not in cache:
                 src = self.store.get_object(src_id)
-                cache[src_id] = float(src.get("trust", 0.0)) if src is not None else 0.0
+                # a source pointer that dangles outside the fact's own scope carries no authority
+                # (B-06): never let a cross-tenant source's trust rank a fact as "current".
+                if (
+                    src is not None
+                    and src.get("tenant") == fact.get("tenant")
+                    and src.get("namespace") == fact.get("namespace")
+                ):
+                    cache[src_id] = float(src.get("trust", 0.0))
+                else:
+                    cache[src_id] = 0.0
             return cache[src_id]
 
         return trust_of
@@ -987,6 +1003,9 @@ class Engine:
         principal = _require_principal(principal)
         principal.require("assert")
         canon = self._ref_in_scope(principal, canonical, what="entity")
+        # merge rewrites the canonical entity (aliases/metadata) in place, so it is a clobber, not
+        # an additive write — same owner guard as supersede (EPISTEMOS-03, B-04).
+        principal.guard_owner(canon.get("owner", principal.agent), action="merge_entities")
         dup_ids = [self._str(d, "duplicate") for d in duplicates]
         if not dup_ids:
             raise ValidationError("merge requires at least one duplicate")
@@ -1021,7 +1040,9 @@ class Engine:
         """Reverse of merge: create new distinct entities from one, keeping lineage."""
         principal = _require_principal(principal)
         principal.require("assert")
-        self._ref_in_scope(principal, entity_id, what="entity")
+        origin = self._ref_in_scope(principal, entity_id, what="entity")
+        # split annotates the origin entity (split_into) in place — clobber, so owner-guarded.
+        principal.guard_owner(origin.get("owner", principal.agent), action="split_entity")
         if not into:
             raise ValidationError("split requires at least one target entity spec")
         ts = self._now()
