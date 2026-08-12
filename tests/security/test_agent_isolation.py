@@ -48,8 +48,11 @@ def test_agent_private_memory_via_namespace(engine: Engine) -> None:
     alice_priv = Principal(tenant="acme", agent="alice", namespace="agent:alice")
     bob_priv = Principal(tenant="acme", agent="bob", namespace="agent:bob")
     f = engine.assert_fact(alice_priv, subject="secret", predicate="p", object="v")
+    # get() returns None for a foreign-scope id, indistinguishable from a truly absent id, so it
+    # cannot be used as an existence oracle (EPISTEMOS-03, B-01). explain() still raises for both.
+    assert engine.get(bob_priv, f.id) is None
     with pytest.raises(NotFoundError):
-        engine.get(bob_priv, f.id)
+        engine.explain(bob_priv, f.id)
     assert engine.search(bob_priv, text="secret") == []
 
 

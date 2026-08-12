@@ -21,8 +21,9 @@ B = Principal(tenant="globex", agent="b", namespace="hr")
 def test_cross_tenant_read_is_notfound(engine: Engine) -> None:
     src = engine.add_source(A, uri="mem://s")
     f = engine.assert_fact(A, subject="Secret", predicate="p", object="V", source=src.id)
-    with pytest.raises(NotFoundError):
-        engine.get(B, f.id)
+    # get() returns None for a foreign object (no existence oracle, B-01); explain() raises,
+    # and raises identically for a truly-absent id, so it leaks nothing either.
+    assert engine.get(B, f.id) is None
     with pytest.raises(NotFoundError):
         engine.explain(B, f.id)
 
@@ -58,8 +59,9 @@ def test_namespace_isolation(engine: Engine) -> None:
     hr = Principal(tenant="acme", agent="a", namespace="hr")
     fin = Principal(tenant="acme", agent="a", namespace="finance")
     f = engine.assert_fact(hr, subject="Salary", predicate="p", object="100")
+    assert engine.get(fin, f.id) is None  # cross-namespace get is None (no oracle, B-01)
     with pytest.raises(NotFoundError):
-        engine.get(fin, f.id)
+        engine.explain(fin, f.id)
     assert engine.search(fin, text="Salary") == []
 
 

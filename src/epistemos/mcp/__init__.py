@@ -153,6 +153,10 @@ class MCPServer:
         except KeyError as exc:
             # missing required argument -> tool error, not a protocol crash
             return self._tool_error(rpc_id, f"missing/unknown field: {exc}")
+        except (ValueError, TypeError) as exc:
+            # client-controlled argument of the wrong type (e.g. confidence="abc" -> float())
+            # must be a tool error, not an uncaught exception that kills serve_stdio (B-03).
+            return self._tool_error(rpc_id, f"invalid argument: {exc}")
         except EpistemosError as exc:
             return self._tool_error(rpc_id, f"{type(exc).__name__}: {exc}")
         return self._ok(rpc_id, {

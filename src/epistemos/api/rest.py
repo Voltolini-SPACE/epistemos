@@ -127,7 +127,13 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _principal(self) -> Principal:
         headers = {k.lower(): v for k, v in self.headers.items()}
-        return cast(Principal, self.server.auth(headers))  # type: ignore[attr-defined]
+        principal = self.server.auth(headers)  # type: ignore[attr-defined]
+        # Fail closed if a pluggable AuthResolver returns a non-Principal (e.g. None instead of
+        # raising). Otherwise a resolver bug would reach the Engine as principal=None and, for
+        # /export, trigger the unscoped whole-store dump (EPISTEMOS-03, B-01).
+        if not isinstance(principal, Principal):
+            raise IdentityError("authentication did not resolve a valid Principal")
+        return principal
 
     def _body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)

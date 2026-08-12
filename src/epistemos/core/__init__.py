@@ -1170,10 +1170,13 @@ class Engine:
         principal = _require_principal(principal)
         principal.require("read")
         obj = self.store.get_object(obj_id)
+        # Return None for BOTH an absent id and one that exists only in another scope, so get()
+        # cannot be used as an existence oracle (EPISTEMOS-03, B-01). Previously absent -> None
+        # but cross-scope -> NotFoundError, which distinguished the two.
         if obj is None:
             return None
         if obj.get("tenant") != principal.tenant or obj.get("namespace") != principal.namespace:
-            raise NotFoundError(f"{obj_id!r} not found")  # no cross-scope existence leak
+            return None
         cls = _KIND_TO_CLS.get(obj.get("kind", ""))
         return cls.from_dict(obj) if cls else obj
 
@@ -1457,11 +1460,24 @@ class Engine:
         return self.store.event_count()
 
     def health(self, principal: Principal | None = None, *, verify: bool = False) -> dict[str, Any]:
-        head = self.store.head()
+        # A scoped caller (a principal) sees only its own scope's event count and never the
+        # store-global chain head — those reveal cross-tenant write activity (EPISTEMOS-03,
+        # B-06/B-07). The operator (principal=None, in-process) still gets the global view.
+        if principal is not None:
+            scope_events = sum(
+                1 for r in self.store.read_events()
+                if r.tenant == principal.tenant and r.namespace == principal.namespace
+            )
+            event_count: int = scope_events
+            head_hash: str | None = None
+        else:
+            head = self.store.head()
+            event_count = self.store.event_count()
+            head_hash = head.entry_hash if head is not None else None
         info: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
-            "event_count": self.store.event_count(),
-            "head_hash": head.entry_hash if head is not None else None,
+            "event_count": event_count,
+            "head_hash": head_hash,
             # Unverified is reported as unknown (None), never as True: before EPISTEMOS-03 a
             # corrupted ledger reported integrity_ok=True simply because nobody checked (A-06).
             "integrity_verified": bool(verify),
