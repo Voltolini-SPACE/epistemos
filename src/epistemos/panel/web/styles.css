@@ -1,3 +1,9 @@
+/* Screen-reader-only: present in the a11y tree, visually hidden (WCAG heading/landmark support). */
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
 /* EPISTEMOS Interface System v1 — design tokens + components.
    Premium, dark, technical, high-density. Brand: indigo #8B93FF/#4A50C4, amber #F0B54A, ink #0B0E17.
    Every value here is a token; screens never hard-code colors/spacing. Theme-aware (dark default). */
@@ -21,7 +27,8 @@
   /* -- text -- */
   --fg: #E8EAF2;
   --fg-2: #A9AFC4;
-  --fg-3: #6E7488;
+  /* --fg-3 raised from #6E7488 (4.15:1) to clear WCAG AA 4.5:1 for muted labels on the dark bg */
+  --fg-3: #868DA3;
   --fg-inv: #070912;
 
   /* -- semantic (do not rely on color alone; always paired with icon/text) -- */
@@ -33,7 +40,7 @@
   --accepted: #4ADE80;
   --supported: #6BD0FF;
   --proposed: #A9AFC4;
-  --retracted: #6E7488;
+  --retracted: #868DA3;  /* raised to clear WCAG AA 4.5:1 on the badge pill (was #6E7488) */
 
   /* -- graph node colors -- */
   --n-entity: #8B93FF;
@@ -100,7 +107,8 @@ code, .mono { font-family: var(--mono); font-size: var(--fs-1); }
 .brand .name b { color: var(--amber); font-weight: 700; }
 
 .topbar { grid-area: top; display: flex; align-items: center; gap: var(--s-3);
-  padding: 0 var(--s-4); border-bottom: 1px solid var(--line); background: var(--bg-1); }
+  padding: 0 var(--s-4); border-bottom: 1px solid var(--line); background: var(--bg-1);
+  min-width: 0; }  /* grid item must shrink below min-content so a narrow topbar never overflows */
 .topbar .spacer { flex: 1; }
 .searchbtn { display: flex; align-items: center; gap: var(--s-2); background: var(--bg-3);
   border: 1px solid var(--line); border-radius: var(--r-2); padding: 6px var(--s-3);
@@ -124,7 +132,7 @@ code, .mono { font-family: var(--mono); font-size: var(--fs-1); }
 .navitem .count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-0);
   color: var(--fg-3); }
 
-.main { grid-area: main; overflow: auto; position: relative; }
+.main { grid-area: main; overflow: auto; position: relative; min-width: 0; }
 .view { padding: var(--s-5); max-width: 1500px; margin: 0 auto; }
 .view.full { max-width: none; padding: 0; height: 100%; }
 
@@ -148,7 +156,7 @@ code, .mono { font-family: var(--mono); font-size: var(--fs-1); }
 .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
 .card { background: linear-gradient(180deg, var(--bg-2), var(--bg-1)); border: 1px solid var(--line);
   border-radius: var(--r-3); padding: var(--s-4); box-shadow: var(--e-1); }
-.card h3 { font-size: var(--fs-1); color: var(--fg-3); text-transform: uppercase;
+.card h3, .card h2.cardh { font-size: var(--fs-1); color: var(--fg-3); text-transform: uppercase;
   letter-spacing: .1em; margin-bottom: var(--s-3); font-weight: 600; }
 .metric { position: relative; }
 .metric .val { font-family: var(--mono); font-size: var(--fs-6); font-weight: 600; letter-spacing: -.02em; }
@@ -267,7 +275,8 @@ code, .mono { font-family: var(--mono); font-size: var(--fs-1); }
 .feed .ev .k { font-size: var(--fs-0); font-family: var(--mono); padding: 1px 7px; border-radius: var(--r-1);
   border: 1px solid var(--line); color: var(--fg-2); flex:none; }
 .feed .ev .who { color: var(--indigo); font-size: var(--fs-1); flex: none; }
-.feed .ev .s { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed .ev .s { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1 1 auto; min-width: 0; }  /* min-width:0 lets the summary actually truncate (no overflow) */
 
 .tl { position: relative; padding-left: var(--s-5); }
 .tl::before { content:""; position:absolute; left: 9px; top: 0; bottom: 0; width: 2px; background: var(--line); }

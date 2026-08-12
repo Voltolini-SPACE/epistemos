@@ -22,6 +22,7 @@ nothing.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from ..claims import ClaimStatus
@@ -73,6 +74,22 @@ class PanelService:
         eng = self._engine
         return [o for o in self._candidates(principal, kind) if eng.is_readable(principal, o)]
 
+    def _readable_by_kinds(
+        self, principal: Principal, kinds: Iterable[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Authorized objects for several kinds in a SINGLE store pass (one ``objects()`` scan, one
+        ``is_readable`` per object) instead of one full scan per kind. Same firewall, ~Nx less work
+        for the aggregate views (counts/graph/as_of/agents/sources). Performance only — no semantic
+        change: an object still appears iff ``is_readable`` passes."""
+        eng = self._engine
+        want = set(kinds)
+        out: dict[str, list[dict[str, Any]]] = {k: [] for k in want}
+        for o in self._engine.store.objects(principal.tenant, principal.namespace):
+            k = o.get("kind")
+            if k in want and eng.is_readable(principal, o):
+                out[k].append(o)
+        return out
+
     # -- listings -----------------------------------------------------------
     def list_objects(
         self, principal: Principal, *, kind: str, limit: int = 50, offset: int = 0
@@ -99,7 +116,7 @@ class PanelService:
         """Authorized counts across kinds + belief tallies. Every number counts only objects the
         caller may read, so a counter can never reveal a hidden object (``PRIVATE_UI_LEAK = 0``)."""
         principal = _require(principal)
-        by_kind = {k: self._readable_of_kind(principal, k) for k in GRAPH_KINDS}
+        by_kind = self._readable_by_kinds(principal, GRAPH_KINDS)
         spaces = self._readable_spaces(principal)
         # belief tally over readable claims + readable reviews (single pass, derive_belief order)
         reviews_by_claim: dict[str, list[str]] = {}
@@ -148,13 +165,16 @@ class PanelService:
         iff BOTH endpoints are readable (ADR-032). ``focus`` keeps a node + its N-hop neighbors."""
         principal = _require(principal)
         want = set(kinds) if kinds else set(GRAPH_KINDS)
-        # readable node set, keyed by id
+        cap = min(int(limit), _MAX_NODES)
+        # readable node set, keyed by id — one store pass across all wanted kinds
         nodes: dict[str, dict[str, Any]] = {}
-        for k in want:
-            for o in self._readable_of_kind(principal, k):
+        for rows in self._readable_by_kinds(principal, want).values():
+            for o in rows:
                 nodes[o["id"]] = o
-                if len(nodes) >= min(int(limit), _MAX_NODES):
+                if len(nodes) >= cap:
                     break
+            if len(nodes) >= cap:
+                break
         edges = self._edges_among(principal, nodes)
         truncated = len(nodes) >= min(int(limit), _MAX_NODES)
         if focus:
@@ -216,6 +236,43 @@ class PanelService:
         for rel in self._readable_of_kind(principal, "relation"):
             add(rel.get("source_entity", ""), rel.get("target_entity", ""),
                 str(rel.get("rel_type", "REL")).upper())
+        return edges
+
+    def _edges_asof(
+        self, nodes: dict[str, dict[str, Any]], asof: _AsOfState
+    ) -> list[dict[str, Any]]:
+        """Edges reconstructed at ``at_tx``. Immutable structural links (derived_from / supersedes /
+        source / review→claim / decision→evidence) come from the objects; the *mutable* evidence
+        attachments are taken from the ledger's as-of link set — never the claim's CURRENT
+        ``metadata.evidence_links`` (which would leak a link attached later)."""
+        edges: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        def add(src: str, dst: str, rel: str) -> None:
+            if src in nodes and dst in nodes and (src, dst, rel) not in seen:
+                seen.add((src, dst, rel))
+                edges.append({"source": src, "target": dst, "rel": rel})
+
+        for oid, o in nodes.items():
+            kind = o.get("kind")
+            for anc in o.get("derived_from", ()) or ():
+                add(oid, anc, "DERIVED_FROM")
+            for old in o.get("supersedes", ()) or ():
+                add(oid, old, "SUPERSEDES")
+            src_id = o.get("source")
+            if isinstance(src_id, str):
+                add(oid, src_id, "REFERENCES")
+            if kind == "review":
+                cid = o.get("claim_id")
+                if isinstance(cid, str):
+                    add(oid, cid, "REVIEWED_BY")
+            elif kind == "decision":
+                for ev in o.get("evidence", ()) or ():
+                    add(oid, ev, "DECIDED_FROM")
+        # mutable evidence attachments — as-of the ledger, not the current claim metadata
+        for cid, links in asof.ev_links.items():
+            for ev_id, rel in links:
+                add(ev_id, cid, str(rel).upper())
         return edges
 
     # -- object detail ------------------------------------------------------
@@ -281,23 +338,50 @@ class PanelService:
 
     def as_of(self, principal: Principal, *, at_tx: str, kinds: Iterable[str] | None = None,
               limit: int = _MAX_NODES) -> dict[str, Any]:
-        """A bitemporal snapshot: the authorized graph as it was believed at transaction time
-        ``at_tx``. Objects created after ``at_tx`` are excluded; belief/validity honour the core's
-        bitemporal semantics. Authorization is evaluated against LIVE grants, fail-closed."""
+        """A bitemporal snapshot: the authorized graph as it was **believed at** transaction time
+        ``at_tx``. State is reconstructed from the ledger using **only** events with ``ts <= at_tx``
+        so a claim retracted/accepted later, an evidence link attached later, or a review cast later
+        never appears (``FUTURE_KNOWLEDGE_LEAK = 0``). Objects created after ``at_tx`` are excluded
+        entirely. Authorization is evaluated against LIVE grants, fail-closed."""
         principal = _require(principal)
         want = set(kinds) if kinds else set(GRAPH_KINDS)
+        asof = _asof_state(self._engine.store, at_tx)
+        cap = min(int(limit), _MAX_NODES)
         nodes: dict[str, dict[str, Any]] = {}
-        for k in want:
-            for o in self._readable_of_kind(principal, k):
-                # transaction-time filter: the object must already have been asserted by at_tx
+        for rows in self._readable_by_kinds(principal, want).values():
+            for o in rows:
+                # existence as-of at_tx: a creation event for this object must precede at_tx. Both
+                # the object's tx_from and the ledger creation record are required (the ledger is
+                # authoritative; tx_from is unchanged by later mutation — a safe cross-check).
                 tx_from = o.get("tx_from") or o.get("created_at")
-                if tx_from and str(tx_from) <= at_tx:
-                    nodes[o["id"]] = o
-                    if len(nodes) >= min(int(limit), _MAX_NODES):
-                        break
-        edges = self._edges_among(principal, nodes)
-        return {"at_tx": at_tx, "nodes": [self._project_node(principal, o) for o in nodes.values()],
+                if not (tx_from and str(tx_from) <= at_tx and o["id"] in asof.existed):
+                    continue
+                nodes[o["id"]] = o
+                if len(nodes) >= cap:
+                    break
+            if len(nodes) >= cap:
+                break
+        edges = self._edges_asof(nodes, asof)
+        return {"at_tx": at_tx,
+                "nodes": [self._project_node_asof(o, asof) for o in nodes.values()],
                 "edges": edges, "as_of": True}
+
+    def _project_node_asof(self, o: dict[str, Any], asof: _AsOfState) -> dict[str, Any]:
+        """Project a node with its state RECONSTRUCTED at ``at_tx`` — never the current, possibly
+        later-mutated, status/belief (the fix for the time-travel future-state leak)."""
+        node = self._project_node_bare(o)
+        oid, kind = o["id"], o.get("kind")
+        if kind == "claim":
+            if oid in asof.superseded:
+                node["status"] = "superseded"
+            elif oid in asof.retracted:
+                node["status"] = "retracted"
+            else:
+                node["status"] = "open"  # lifecycle transitions after at_tx are not yet known
+            node["claimant"] = o.get("claimant")
+        elif kind == "fact":
+            node["believed"] = oid not in asof.fact_ended  # not yet ended as of at_tx
+        return node
 
     # -- spaces / agents / sources / health ---------------------------------
     def spaces(self, principal: Principal) -> dict[str, Any]:
@@ -317,17 +401,18 @@ class PanelService:
     def agents(self, principal: Principal) -> dict[str, Any]:
         """Agents actually observed in readable objects/events — never a fabricated integration."""
         principal = _require(principal)
-        by_kind = {k: self._readable_of_kind(principal, k) for k in GRAPH_KINDS}
+        by_kind = self._readable_by_kinds(principal, GRAPH_KINDS)
         stats = self._observed_agents(principal, by_kind)
         return {"agents": sorted(stats.values(), key=lambda a: -a["objects"])}
 
     def sources(self, principal: Principal) -> dict[str, Any]:
         """Sources with trust + usage. Trust is source AUTHORITY, never a truth score (§21)."""
         principal = _require(principal)
-        srcs = self._readable_of_kind(principal, "source")
+        grouped = self._readable_by_kinds(principal, ("source", "fact", "claim", "evidence"))
+        srcs = grouped["source"]
         usage: dict[str, int] = {}
         for k in ("fact", "claim", "evidence"):
-            for o in self._readable_of_kind(principal, k):
+            for o in grouped[k]:
                 sid = o.get("source")
                 if sid:
                     usage[sid] = usage.get(sid, 0) + 1
@@ -361,14 +446,15 @@ class PanelService:
         return {"results": out}
 
     # -- projection / helpers (redaction) -----------------------------------
-    def _project_node(self, principal: Principal, o: dict[str, Any]) -> dict[str, Any]:
+    def _project_node_bare(self, o: dict[str, Any]) -> dict[str, Any]:
+        """The redacted node WITHOUT time-varying state (status/belief) — only creation-time,
+        immutable fields. Shared by the live and the as-of projections."""
         kind = o.get("kind", "object")
         node = {
             "id": o["id"], "kind": kind, "label": _label(o),
             "space": (o.get("spaces") or [None])[0], "created_at": o.get("created_at"),
         }
         if kind == "claim":
-            node["status"] = o.get("status")
             node["claimant"] = o.get("claimant")
         elif kind == "evidence":
             node["evidence_kind"] = o.get("evidence_kind")
@@ -377,6 +463,14 @@ class PanelService:
             node["claim_id"] = o.get("claim_id")
         elif kind == "source":
             node["trust"] = o.get("trust")
+        return node
+
+    def _project_node(self, principal: Principal, o: dict[str, Any]) -> dict[str, Any]:
+        """Live projection: bare fields + the object's CURRENT state."""
+        node = self._project_node_bare(o)
+        kind = o.get("kind", "object")
+        if kind == "claim":
+            node["status"] = o.get("status")
         elif kind == "fact":
             node["believed"] = o.get("tx_to") is None
         return node
@@ -423,6 +517,49 @@ class PanelService:
                 if ts > s["last_seen"]:
                     s["last_seen"] = ts
         return stats
+
+
+# -- as-of (bitemporal) state reconstruction -----------------------------------
+@dataclass(frozen=True)
+class _AsOfState:
+    """Object state derived from the ledger using only events with ``ts <= at_tx``."""
+    existed: set[str]                      # ids with a creation event by at_tx
+    retracted: set[str]                    # claim ids retracted by at_tx
+    superseded: set[str]                   # claim ids superseded by at_tx
+    fact_ended: set[str]                   # fact ids retracted/superseded by at_tx
+    ev_links: dict[str, list[tuple[str, str]]]  # claim id -> [(evidence id, relation)]
+
+
+def _asof_state(store: Any, at_tx: str) -> _AsOfState:
+    """Single ledger scan → the lifecycle/link state as it stood at ``at_tx``. Events strictly
+    after ``at_tx`` are ignored, so nothing that happened later can be reconstructed."""
+    existed: set[str] = set()
+    retracted: set[str] = set()
+    superseded: set[str] = set()
+    fact_ended: set[str] = set()
+    ev_links: dict[str, list[tuple[str, str]]] = {}
+    for rec in store.read_events():
+        if str(rec.ts) > at_tx:
+            continue
+        p = rec.payload if isinstance(rec.payload, dict) else {}
+        oid = p.get("id")
+        if isinstance(oid, str) and "kind" in p:  # an object-creation event
+            existed.add(oid)
+        op = rec.op
+        cid = p.get("claim_id")
+        if op == "claim_retracted" and isinstance(cid, str):
+            retracted.add(cid)
+        elif op == "claim_superseded" and isinstance(cid, str):
+            superseded.add(cid)
+        elif op in ("fact_retracted", "fact_superseded"):
+            fid = p.get("fact_id") or p.get("id")
+            if isinstance(fid, str):
+                fact_ended.add(fid)
+        elif op == "evidence_attached" and isinstance(cid, str):
+            ev_id, rel = p.get("evidence_id"), p.get("relation", "supports")
+            if isinstance(ev_id, str):
+                ev_links.setdefault(cid, []).append((ev_id, str(rel)))
+    return _AsOfState(existed, retracted, superseded, fact_ended, ev_links)
 
 
 # -- module-level pure helpers -------------------------------------------------

@@ -4,7 +4,8 @@ export function el(tag, props = {}, ...children) {
   for (const [k, v] of Object.entries(props || {})) {
     if (v == null || v === false) continue;
     if (k === "class") node.className = v;
-    else if (k === "html") node.innerHTML = v;
+    // NOTE: no HTML-string sink by design — all content is set via `text` (textContent) or
+    // appended as text-node children, so user-controlled strings can never inject markup (XSS).
     else if (k === "text") node.textContent = v;
     else if (k === "dataset") Object.assign(node.dataset, v);
     else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
