@@ -61,6 +61,17 @@ class LocalClient:
     def explain(self, obj_id: str) -> dict[str, Any]:
         return self._engine.explain(self._p, obj_id)
 
+    def context(self, query: str | None = None, *, intent: str | None = None,
+                as_of: str | None = None, requested_budget: int | None = None,
+                consumer_profile: dict[str, Any] | None = None) -> dict[str, Any]:
+        """EPCTX/1 wire document over the caller's authorized scope."""
+        return self._engine.epctx(self._p, query, intent=intent, as_of=as_of,
+                                  requested_budget=requested_budget,
+                                  consumer_profile=consumer_profile)
+
+    def expand(self, handle: str) -> dict[str, Any]:
+        return self._engine.expand(self._p, handle)
+
     def health(self) -> dict[str, Any]:
         return self._engine.health(self._p)
 
@@ -143,6 +154,24 @@ class RemoteClient:
 
     def explain(self, obj_id: str) -> dict[str, Any]:
         return cast("dict[str, Any]", self._request("GET", f"/explain/{obj_id}"))
+
+    def context(self, query: str | None = None, *, intent: str | None = None,
+                as_of: str | None = None, requested_budget: int | None = None,
+                consumer_profile: dict[str, Any] | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"query": query}
+        if intent is not None:
+            body["intent"] = intent
+        if as_of is not None:
+            body["as_of"] = as_of
+        if requested_budget is not None:
+            body["requested_budget"] = requested_budget
+        if consumer_profile is not None:
+            body["consumer_profile"] = consumer_profile
+        return cast("dict[str, Any]", self._request("POST", "/context", body=body))
+
+    def expand(self, handle: str) -> dict[str, Any]:
+        return cast("dict[str, Any]", self._request("POST", "/context/expand",
+                                                    body={"handle": handle}))
 
     def health(self) -> dict[str, Any]:
         return cast("dict[str, Any]", self._request("GET", "/health"))

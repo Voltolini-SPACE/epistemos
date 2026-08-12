@@ -274,6 +274,31 @@ def _timeline(
     return {"timeline": tl}
 
 
+def _context(
+    engine: Engine, principal: Principal, q: dict[str, str], body: dict[str, Any]
+) -> dict[str, Any]:
+    # EPCTX/1 wire document. Identity is the token's principal; the body NEVER carries authority
+    # (no tenant/principal/capabilities accepted, §17). Only query shaping is taken from the body.
+    profile = body.get("consumer_profile")
+    if profile is not None and not isinstance(profile, dict):
+        raise ValidationError("consumer_profile must be an object")
+    budget = body.get("requested_budget")
+    return engine.epctx(
+        principal, body.get("query"), intent=body.get("intent"), as_of=body.get("as_of"),
+        requested_budget=int(budget) if isinstance(budget, int) else None,
+        consumer_profile=profile,
+    )
+
+
+def _context_expand(
+    engine: Engine, principal: Principal, q: dict[str, str], body: dict[str, Any]
+) -> dict[str, Any]:
+    handle = body.get("handle")
+    if not isinstance(handle, str) or not handle:
+        raise ValidationError("handle must be a non-empty string")
+    return engine.expand(principal, handle)
+
+
 def _export(
     engine: Engine, principal: Principal, q: dict[str, str], body: dict[str, Any]
 ) -> dict[str, Any]:
@@ -290,6 +315,8 @@ _ROUTES: dict[tuple[str, str], _RouteHandler] = {
     ("POST", "/facts"): _assert_fact,
     ("GET", "/facts/current"): _current,
     ("POST", "/search"): _search,
+    ("POST", "/context"): _context,
+    ("POST", "/context/expand"): _context_expand,
     ("GET", "/timeline"): _timeline,
     ("GET", "/export"): _export,
 }

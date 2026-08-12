@@ -1950,6 +1950,37 @@ class Engine:
             principal, query, config=EnvelopeConfig(), at_tx=at_tx_s, intent=intent)
         return env.to_dict()
 
+    def epctx(
+        self,
+        principal: Principal,
+        query: str | None = None,
+        *,
+        intent: str | None = None,
+        as_of: Any = None,
+        requested_budget: int | None = None,
+        consumer_profile: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Build the formal **EPCTX/1 wire document** (EPISTEMOS-09, ADR-038): the stable, sectioned
+        interop form of the Context Envelope. Typed objects (claim vs fact), separated
+        contradictions, completeness, temporal and provenance contracts, token accounting, opaque
+        expansion handles, and an integrity hash. Additive over :meth:`context`; identity is the
+        caller's and never taken from the request."""
+        principal = _require_principal(principal)
+        from ..protocol import build_epctx
+
+        as_of_s = as_of if isinstance(as_of, str) or as_of is None else str(as_of)
+        return build_epctx(self, principal, query=query, intent=intent, as_of=as_of_s,
+                           requested_budget=requested_budget, consumer_profile=consumer_profile)
+
+    def expand(self, principal: Principal, handle: str) -> dict[str, Any]:
+        """Redeem an opaque EPCTX expansion handle (EXPERIMENTAL, ADR-042). Re-authorizes every
+        member live for this principal at the handle's bound snapshot; a stale, revoked,
+        cross-principal or cross-tenant handle yields nothing private."""
+        principal = _require_principal(principal)
+        from ..protocol.handles import expand as _expand
+
+        return _expand(self, principal, handle)
+
     def explain(self, principal: Principal, obj_id: str, *, depth: int = 3) -> dict[str, Any]:
         principal = _require_principal(principal)
         principal.require("read")
