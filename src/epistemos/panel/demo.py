@@ -35,9 +35,10 @@ def _p(agent: str, *, caps: frozenset[str] = _DEFAULT_CAPS) -> Principal:
 
 def make_identities() -> DemoIdentities:
     """The demo principals + their bearer tokens (tokens are demo-only, printed at launch)."""
-    cur_caps = _DEFAULT_CAPS | {"knowledge.accept", "knowledge.promote", "decide"}
+    cur_caps = _DEFAULT_CAPS | {
+        "knowledge.accept", "knowledge.promote", "decide", "knowledge.share"}
     curator = _p("curator", caps=cur_caps)
-    hermes = _p("hermes", caps=_DEFAULT_CAPS | {"decide"})
+    hermes = _p("hermes", caps=_DEFAULT_CAPS | {"decide", "knowledge.share"})
     tokens = {
         "demo-alice": _p("alice"),
         "demo-bob": _p("bob"),
@@ -62,7 +63,7 @@ def seed(engine: Engine, identities: DemoIdentities) -> dict[str, str]:
 
     # -- spaces: a shared research team + an org-wide space (owned by curator) ----------------
     research = engine.create_space(curator, name="Research", visibility="TEAM")
-    for a in ("alice", "bob", "hermes"):
+    for a in ("alice", "bob", "hermes", "demo-feed"):  # demo-feed = the optional live generator
         engine.grant_capability(curator, space_id=research.id, agent=a)
     org = engine.create_space(curator, name="Organization", visibility="ORGANIZATION")
 
@@ -76,18 +77,29 @@ def seed(engine: Engine, identities: DemoIdentities) -> dict[str, str]:
     internal = engine.add_source(alice, uri="memo://board/2026-07", source_kind="document",
                                  trust=0.8)
 
+    # the research backbone (sources, entities, facts) is shared into the team space so the whole
+    # team sees a connected graph. The private claim + its own source/evidence stay PRIVATE below.
+    def share(obj):
+        engine.share(hermes, obj.id, into=research.id)
+        return obj
+
+    for s in (sec, news, rumor):
+        share(s)
+
     # -- entities + relations (the graph backbone) --------------------------------------------
-    cx = engine.add_entity(hermes, name="Company X", entity_type="organization")
-    cy = engine.add_entity(hermes, name="Company Y", entity_type="organization")
-    cz = engine.add_entity(hermes, name="Company Z", entity_type="organization")
-    engine.add_relation(hermes, source_entity=cx.id, target_entity=cy.id, rel_type="competitor")
-    engine.add_relation(hermes, source_entity=cy.id, target_entity=cz.id, rel_type="subsidiary")
+    cx = share(engine.add_entity(hermes, name="Company X", entity_type="organization"))
+    cy = share(engine.add_entity(hermes, name="Company Y", entity_type="organization"))
+    cz = share(engine.add_entity(hermes, name="Company Z", entity_type="organization"))
+    share(engine.add_relation(hermes, source_entity=cx.id, target_entity=cy.id,
+                              rel_type="competitor"))
+    share(engine.add_relation(hermes, source_entity=cy.id, target_entity=cz.id,
+                              rel_type="subsidiary"))
 
     # -- facts (believed knowledge) -----------------------------------------------------------
-    engine.assert_fact(hermes, subject="Company X", predicate="sector", object="fintech",
-                       source=sec.id, confidence=0.9)
-    engine.assert_fact(hermes, subject="Company Y", predicate="headquarters", object="Lisbon",
-                       source=sec.id)
+    share(engine.assert_fact(hermes, subject="Company X", predicate="sector", object="fintech",
+                             source=sec.id, confidence=0.9))
+    share(engine.assert_fact(hermes, subject="Company Y", predicate="headquarters", object="Lisbon",
+                             source=sec.id))
 
     # -- the flagship contested claim: X acquired Y -------------------------------------------
     acq = engine.create_claim(hermes, subject="Company X", predicate="acquired", object="Company Y",
