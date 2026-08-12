@@ -2,20 +2,29 @@
   <img src="docs/brand/assets/logo-horizontal.svg" alt="EPISTEMOS" width="380"/>
 </p>
 
-<p align="center"><strong>Sovereign, graph-native context, memory, provenance and decision-lineage engine for AI agents.</strong></p>
+<p align="center"><strong>Turn information into auditable knowledge.</strong><br/>
+A sovereign, local-first engine — and operational panel — for context, memory, provenance,
+claims and decision-lineage, for AI agents and the teams that run them.</p>
 
 <p align="center">
   <a href="https://voltolini.space/epistemos">Website</a> ·
+  <a href="#panel--the-living-knowledge-interface">Panel</a> ·
   <a href="docs/adr/README.md">Architecture (ADRs)</a> ·
   <a href="https://github.com/Voltolini-SPACE/epistemos/releases">Releases</a> ·
   MIT · Python ≥3.11 · <strong>zero runtime dependencies</strong>
+</p>
+
+<p align="center">
+  <img src="docs/panel/screenshots/02-overview.png" alt="EPISTEMOS Panel — Knowledge Pulse: live, authorized epistemological activity" width="880"/>
+  <br/><em>The EPISTEMOS Panel — a live, authorized view of what the system knows. Real data, local-first, zero-egress.</em>
 </p>
 
 ---
 
 EPISTEMOS is the layer that answers *what the system knows, how it knows it, when it
 knew it, and where that knowledge came from* — independent of any single LLM, provider,
-agent framework, vector database or graph database.
+agent framework, vector database or graph database. Its core is a small, dependency-free
+Python library; its **Panel** turns that core into a living, explorable interface.
 
 > NOMOS decides **what an agent may do**. EPISTEMOS records **what the system knows** —
 > and can be used by NOMOS, Hermes, OpenClaw, or any other agent without becoming a
@@ -24,13 +33,24 @@ agent framework, vector database or graph database.
 
 ## Status
 
-**`v0.5.0` — developer preview.** Clean-room, not a fork or submodule of any system.
-Adds **Collaborative Claims** — verifiable epistemology where *contribution ≠ truth*: claims,
-typed evidence and individual reviews are first-class, **belief is derived (never a stored
-boolean)** and acceptance is **governed** through a pluggable policy port (default offline, no
-LLM). Builds on **Knowledge Spaces** + capability authorization (private-by-default, share by
-permission). Adversarially audited, **855 tests**, mutation **39/39** killed, ruff + mypy
-`--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the full gate matrix.
+**Core `v0.5.0` + Panel `v1`.** Clean-room, not a fork or submodule of any system.
+
+The **core** delivers **Collaborative Claims** — verifiable epistemology where *contribution ≠
+truth*: claims, typed evidence and individual reviews are first-class, **belief is derived (never
+a stored boolean)** and acceptance is **governed** through a pluggable policy port (default
+offline, no LLM). It builds on **Knowledge Spaces** + capability authorization (private-by-default,
+share by permission).
+
+The **Panel** (`epistemos-panel-v1`) is the operational interface over that core: a local-first,
+zero-egress web app — knowledge-graph explorer, claim center with belief decomposition, live
+activity over SSE, timeline + time-travel, and honest system health. Authorization stays in the
+core; the browser is a read-only consumer that grants nothing.
+
+Adversarially audited across every release. **877 tests** (855 core + 22 panel, incl. a
+private-leak battery and a full-stack HTTP boundary), mutation **39/39** killed on the claim core,
+ruff + mypy `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the gate
+matrix and [`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md) for
+the Panel's freeze evidence.
 
 **Measured, reproducible** (`benchmarks/`):
 - 100k lexical **search: 6.2 s → 34 ms (~183×)** vs the O(N) scan (v0.2, FTS5 index).
@@ -83,15 +103,36 @@ eng.explain(ctx, f.id)                                     # -> provenance genea
 ## Panel — the Living Knowledge Interface
 
 The official operational UI: a **local-first, zero-egress** web panel that turns the engine into a
-live, explorable experience — a Canvas knowledge-graph explorer, global search + `⌘K` command palette,
-a Claim Center with belief **decomposition**, Timeline + **Time Travel** (real bitemporal), Spaces,
-Agents, Sources, and System Health, updating live over SSE. It is a *consumer*: authorization stays in
-the core, the browser grants nothing, and a strict `default-src 'self'` CSP keeps it zero-egress.
-Pure stdlib + vanilla JS — no framework, no npm, no CDN.
+live, explorable experience. It is a *consumer* — authorization stays in the core, the browser grants
+nothing, and a strict `default-src 'self'` CSP keeps it zero-egress. Pure stdlib + vanilla JS: no
+framework, no npm, no CDN.
 
 ```bash
 python -m epistemos.panel --demo        # real demo corpus, opens http://127.0.0.1:8787/
 ```
+
+| | |
+|:--:|:--:|
+| ![Knowledge graph explorer](docs/panel/screenshots/03-graph.png) | ![Belief decomposition of a disputed claim](docs/panel/screenshots/10-claim-detail.png) |
+| **Knowledge graph** — typed nodes (claim · evidence · review · decision · source · entity · fact), only what you're authorized to see. | **Why this belief** — evidence *supports/contradicts* and individual reviews *confirm/dispute*; belief is **derived**, and *majority is not truth*. |
+| ![Claim center](docs/panel/screenshots/04-claims.png) | ![Timeline and time travel](docs/panel/screenshots/05-timeline.png) |
+| **Claim Center** — every claim's belief state (proposed · supported · disputed · accepted · retracted), claimant kept separate from ingesting agent and source. | **Timeline + Time Travel** — the real bitemporal ledger: *what did EPISTEMOS know then?* |
+
+What it gives you:
+
+- **Knowledge graph explorer** — a Canvas force-layout of typed nodes and their relations, with
+  level-of-detail, viewport culling, keyboard navigation and an accessible list view.
+- **Claim Center + belief decomposition** — see a claim's evidence and reviews resolve into a
+  *derived* belief; contribution is never mistaken for truth.
+- **Global search + `⌘K` command palette** — instant, typed, grouped results across everything you can read.
+- **Live activity over SSE** — counters, feed and graph update as the ledger grows, no reload.
+- **Timeline + Time Travel** — replay the real bitemporal history and view the past as it was believed.
+- **Spaces · Agents · Sources · Health** — governance surfaces, with *trust ≠ truth* kept explicit.
+
+Every surface is gated by one predicate — `Engine.is_readable(principal, obj)` — so **nothing you
+can't read reaches the browser**, not in a listing, a graph node, a search hit, a timeline entry or
+the live stream. Verified by a private-leak test battery and a full-stack HTTP boundary test
+(`PRIVATE_UI / GRAPH / SEARCH / STREAM_LEAK = 0`).
 
 See [`docs/panel/`](docs/panel/ARCHITECTURE.md) and
 [`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md).
@@ -102,17 +143,26 @@ See [`docs/panel/`](docs/panel/ARCHITECTURE.md) and
    NOMOS ─(adapter)─┐
    HERMES ──────────┤          ┌───────────── EPISTEMOS core ─────────────┐
    OpenClaw ────────┼─ SDK ───▶│ model · graph · temporal · provenance    │
-   other agents ────┘  REST    │ memory · retrieval · decisions · ledger  │
-                        MCP     │ identity/tenancy (fail-closed)           │
-                                └──────────────────┬───────────────────────┘
-                                                   │  storage ports
-                                 ┌─────────────────▼─────────────────┐
-                                 │ SQLite adapter · in-memory adapter │
-                                 └────────────────────────────────────┘
+   other agents ────┘  REST    │ memory · retrieval · claims · decisions  │
+                        MCP     │ ledger · identity/tenancy (fail-closed)  │
+                                └───────┬───────────────────────┬─────────┘
+                          storage ports │                       │ is_readable()
+              ┌───────────────────────▼──────┐     ┌──────────▼───────────────┐
+              │ SQLite · in-memory adapters   │     │ Panel boundary  (api/)   │
+              └───────────────────────────────┘     │ authorized read-model    │
+                                                     │ + server-filtered SSE    │
+                                                     └──────────┬───────────────┘
+                                                     strict CSP │ (read-only)
+                                                     ┌──────────▼───────────────┐
+                                                     │ Panel  (browser consumer)│
+                                                     │ grants no authority      │
+                                                     └──────────────────────────┘
 ```
 
-The core (`src/epistemos/`) depends only on ports. Adapters depend on EPISTEMOS —
-never the reverse (`CORE ← ADAPTER`, never `CORE → NOMOS`).
+The core (`src/epistemos/`) depends only on ports. Adapters and the Panel boundary depend on
+EPISTEMOS — never the reverse (`CORE ← ADAPTER`, never `CORE → NOMOS`). The Panel reaches the core
+through exactly one authorization predicate, `Engine.is_readable(principal, obj)`, and never receives
+data a principal can't read (see [ADR-030…032](docs/adr/README.md)).
 
 ## What it is (and is not)
 
@@ -175,6 +225,10 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
   [review](docs/claims/REVIEW_MODEL.md) / [belief](docs/claims/BELIEF_MODEL.md) models,
   [visibility composition](docs/claims/VISIBILITY_COMPOSITION.md),
   [threat model](docs/claims/THREAT_MODEL.md), [API](docs/claims/API_MODEL.md) (v0.5)
+- `docs/panel/` — the Panel: [architecture](docs/panel/ARCHITECTURE.md),
+  [security](docs/panel/SECURITY.md), [realtime](docs/panel/REALTIME.md),
+  [graph explorer](docs/panel/GRAPH_EXPLORER.md), [accessibility](docs/panel/ACCESSIBILITY.md),
+  [performance](docs/panel/PERFORMANCE.md), [deployment](docs/panel/DEPLOYMENT.md) (v1)
 - `docs/security/` — [threat model](docs/security/THREAT_MODEL.md), license matrix, SBOM, zero-egress,
   mutation report
 - `docs/benchmarks/` — [reproducible benchmark](docs/benchmarks/RESULTS.md) methodology and results
@@ -212,6 +266,15 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 > exposes private evidence (§15). 855 tests, mutation 39/39. See
 > [`docs/EPISTEMOS_V0_5_FINAL_REPORT.md`](docs/EPISTEMOS_V0_5_FINAL_REPORT.md), `docs/claims/`,
 > ADR-028…029.
+>
+> **Panel v1 (LIVING KNOWLEDGE INTERFACE)** is the operational UI over the v0.5 core: a stdlib +
+> vanilla-JS web app (no framework/npm/CDN) that is local-first and zero-egress by construction.
+> Graph explorer, claim center with belief decomposition, `⌘K` search, live SSE activity, timeline
+> + time-travel, spaces/agents/sources/health. Every surface is gated by the single core predicate
+> `Engine.is_readable`, so `PRIVATE_UI / GRAPH / SEARCH / STREAM_LEAK = 0` — proven by a leak
+> battery and a full-stack HTTP boundary test. See
+> [`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md), `docs/panel/`,
+> ADR-030…032.
 
 ## License
 
