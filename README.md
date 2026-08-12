@@ -86,7 +86,7 @@ eng = Engine.open("knowledge.epistemos")          # single local file, no networ
 ctx = Principal(tenant="acme", agent="claude", namespace="hr")
 
 # assert a fact with provenance and valid-time
-src = eng.add_source(ctx, uri="mem://note-1", kind="note", trust=0.6)
+src = eng.add_source(ctx, uri="mem://note-1", source_kind="note", trust=0.6)
 f = eng.assert_fact(ctx, subject="Alice", predicate="works_at", object="X",
                     valid_from="2026-01-01", source=src.id)
 
