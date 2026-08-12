@@ -24,9 +24,10 @@ agent framework, vector database or graph database.
 
 ## Status
 
-**`v0.3.0` — developer preview.** Clean-room, not a fork or submodule of any system.
-Adversarially audited (43 findings fixed), **700 tests**, mutation **25/25** killed,
-ruff + mypy `--strict` clean. See [`docs/STATUS.md`](docs/STATUS.md) for the full gate matrix.
+**`v0.4.0` — developer preview.** Clean-room, not a fork or submodule of any system.
+Adds **Knowledge Spaces** + capability-based authorization (private-by-default, share by
+permission). Adversarially audited, **780 tests**, mutation **32/32** killed, ruff + mypy
+`--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the full gate matrix.
 
 **Measured, reproducible** (`benchmarks/`):
 - 100k lexical **search: 6.2 s → 34 ms (~183×)** vs the O(N) scan (v0.2, FTS5 index).
@@ -132,7 +133,8 @@ the derivation genealogy and cross-references the tamper-evident ledger. See
 [`ADR-004`](docs/adr/ADR-004-provenance-model.md).
 
 **How does tenancy work?** Every call carries a `Principal` (tenant/agent/namespace). Cross-scope access
-fails closed; agent-private memory is a per-agent namespace. See
+fails closed. Selected knowledge is shared by explicit permission via **Knowledge Spaces**
+(private by default); see [ADR-024](docs/adr/ADR-024-knowledge-spaces.md). See
 [`ADR-008`](docs/adr/ADR-008-identity-tenancy.md).
 
 **How to run locally?** `Engine.open("knowledge.epistemos")` (one SQLite file) or `Engine.open(":memory:")`.
