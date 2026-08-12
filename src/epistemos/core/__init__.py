@@ -1664,9 +1664,18 @@ class Engine:
                 "scope": {"tenant": None, "namespace": None},
             }
 
+        # Space firewall on export (EPISTEMOS-04, §18): the slice contains ONLY events for objects
+        # the principal may currently read. An event referencing an object outside the caller's
+        # authorized spaces is dropped, so a scoped export cannot exfiltrate a namespace-mate's
+        # private knowledge. Space/grant control-plane events are omitted too.
+        readable_ids = {
+            o["id"] for o in self.store.objects(principal.tenant, principal.namespace)
+            if o.get("kind") not in ("space", "grant") and self._can_read(principal, o)
+        }
         selected = [
             r for r in self.store.read_events()
             if r.tenant == principal.tenant and r.namespace == principal.namespace
+            and _event_object_id(r.payload) in readable_ids
         ]
         resealed: list[dict[str, Any]] = []
         prev = GENESIS_HASH
@@ -1849,6 +1858,17 @@ def _carries_chain(events: Any) -> bool:
     return all(
         isinstance(e, dict) and all(f in e for f in _CHAIN_FIELDS) for e in events
     )
+
+
+def _event_object_id(payload: Any) -> str | None:
+    """The primary object id an event pertains to (for scoped, space-filtered export)."""
+    if not isinstance(payload, dict):
+        return None
+    for key in ("id", "fact_id", "object_id", "entity", "canonical"):
+        val = payload.get(key)
+        if isinstance(val, str):
+            return val
+    return None
 
 
 def _grant_id(space_id: str, agent: str) -> str:
