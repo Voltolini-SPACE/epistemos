@@ -26,15 +26,18 @@ def test_timeline_is_chronological_across_offset_forms() -> None:
     eng = Engine(MemoryStore(), clock=ManualClock())
     s = eng.add_source(CTX, uri="mem://s", trust=0.9)
     # same instant, three textual forms; plus an earlier and a later one
-    eng.assert_fact(CTX, subject="X", predicate="p", object="a", valid_from="2026-01-01T12:00:00+05:00", source=s.id)
-    eng.assert_fact(CTX, subject="X", predicate="p", object="b", valid_from="2026-01-01T00:00:00Z", source=s.id)
-    eng.assert_fact(CTX, subject="X", predicate="p", object="c", valid_from="2026-06-01T00:00:00Z", source=s.id)
+    eng.assert_fact(CTX, subject="X", predicate="p", object="a",
+                    valid_from="2026-01-01T12:00:00+05:00", source=s.id)
+    eng.assert_fact(CTX, subject="X", predicate="p", object="b",
+                    valid_from="2026-01-01T00:00:00Z", source=s.id)
+    eng.assert_fact(CTX, subject="X", predicate="p", object="c",
+                    valid_from="2026-06-01T00:00:00Z", source=s.id)
     tl = eng.timeline(CTX, subject="X")
     from epistemos._util import parse_instant
     valids = [parse_instant(r["valid_from"]) for r in tl if r["valid_from"]]
     # within the same tx ordering the validity axis must be non-decreasing by true instant
     tx_order = [(r["tx_from"], parse_instant(r["valid_from"])) for r in tl if r["valid_from"]]
-    for (t1, v1), (t2, v2) in zip(tx_order, tx_order[1:]):
+    for (t1, v1), (t2, v2) in zip(tx_order, tx_order[1:], strict=False):
         if t1 == t2:
             assert v1 <= v2, "timeline mis-ordered mixed-offset validity within one tx instant"
     assert valids  # sanity

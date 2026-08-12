@@ -86,10 +86,10 @@ def main() -> None:
                 phase_tottime[phase] = phase_tottime.get(phase, 0.0) + tottime
     total = sum(phase_tottime.values()) or 1.0
 
-    lines = [f"# Retrieval Profile — legacy O(N) scan (baseline)", ""]
+    lines = ["# Retrieval Profile — legacy O(N) scan (baseline)", ""]
     lines.append(f"- scale: **{args.scale:,} facts** · searches profiled: {args.searches}")
     lines.append(f"- wall-clock per search (warm): **{wall:.1f} ms**")
-    lines.append(f"- store: SQLite (WAL)")
+    lines.append("- store: SQLite (WAL)")
     lines.append("")
     lines.append("## Cost decomposition (self-time by phase, from cProfile `tottime`)")
     lines.append("")

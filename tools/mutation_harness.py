@@ -14,7 +14,6 @@ Critical gate: NON_EQUIVALENT_SURVIVED == 0. Run: `python tools/mutation_harness
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import sys
