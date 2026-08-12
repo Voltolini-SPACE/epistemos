@@ -158,13 +158,13 @@ def test_oversized_body_is_rejected_without_500(server):
     assert st in (400, 413, -1), f"oversized body -> {st}"
 
 
-# ---- F4: Server header does not advertise the Python version ----
+# ---- F4: Server header is exactly the intended constant (no Python version, no extra tokens) ----
 def test_server_header_hides_python_version(server):
     host, port, _ = server
     _, headers, _ = _get(host, port, "/", token=None)
     server_hdr = headers.get("Server", "")
-    assert "epistemos-panel" in server_hdr
-    assert "Python/" not in server_hdr, server_hdr
+    # exact value — no Python runtime token, and no other string may leak into the header
+    assert server_hdr == "epistemos-panel/1.0", server_hdr
 
 
 def test_no_cors_header_same_origin_only(server):
