@@ -1,5 +1,12 @@
 # EPISTEMOS Benchmark Results
 
+> **v0.3 note (EPISTEMOS-03, audit OV-05/OV-06):** the absolute numbers below are v0.1-era and have
+> drifted from current HEAD; write amplification here was also understated (it did not account for the
+> secondary index writes). For the current, re-measured numbers — including honest write-throughput
+> and DB-size costs of the provenance and unicode indexes — see
+> [`EPISTEMOS_03_FINAL_BENCHMARK.md`](EPISTEMOS_03_FINAL_BENCHMARK.md). This file is retained for the
+> v0.1 methodology and history.
+
 Reproducible: `python benchmarks/bench.py --scales 1000 10000 100000`
 
 ## Hardware / configuration

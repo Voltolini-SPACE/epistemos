@@ -61,7 +61,7 @@ refused. Ingested content is data until an explicitly authorized component inter
 | S28 | Concurrent writes | **MITIGATED** | serialized writers + atomic; 30-cycle race battery. `tests/race/` |
 | S29 | Partial transaction | **MITIGATED** | no intermediate state at any stage. `test_atomic` (before/during-ledger/during-projection) |
 | S30 | Process crash | **MITIGATED** | WAL + `synchronous=FULL`; real SIGKILL recovery. `tests/chaos/test_sigkill_during_write_recovers` |
-| S31 | Filesystem corruption | **MITIGATED / RESIDUAL** | `PRAGMA integrity_check` + ledger `verify_chain` + rebuild after crash. RESIDUAL: hardware bit-rot is out of scope; logical tamper IS detected. `test_chaos` |
+| S31 | Filesystem corruption | **MITIGATED / RESIDUAL** | ledger `verify_chain` (hash-chain integrity) + FTS `verify()` content-drift detection (EPISTEMOS-03) + rebuild-from-ledger after crash. RESIDUAL: hardware bit-rot is out of scope; logical tamper IS detected. *(EPISTEMOS-03 OV-07 correction: `PRAGMA integrity_check` was cited but is not invoked by the shipped code; SQLite still enforces WAL+synchronous=FULL for crash-consistency. Integrity is proven by the hash chain, not by that pragma.)* `test_chaos`, `test_index_robustness` |
 | S32 | Network outage | **N/A (core) / TOLERATED** | core is zero-egress; REST/MCP are local. no network dependency to fail |
 | S33 | Model outage | **MITIGATED** | `NullModelProvider`; core needs no model. `tests/unit/test_null_llm.py` |
 | S34 | Embedding outage | **MITIGATED** | no embeddings required; retrieval has no vector component by default. `test_null_llm`, `test_retrieval` |

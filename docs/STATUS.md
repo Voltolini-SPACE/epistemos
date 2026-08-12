@@ -81,3 +81,42 @@ v0.1 properties. Detail: [`EPISTEMOS_V0_2_FINAL_REPORT.md`](EPISTEMOS_V0_2_FINAL
 | ADRS 016–020 | ✅ | `docs/adr/` |
 
 `STATUS_FINAL = EPISTEMOS_V0_2_PASS` — tag `epistemos-v0.2.0` (v0.1.0 unchanged).
+
+---
+
+## EPISTEMOS-03 (AUDIT + CAPABILITY UPLIFT) gates
+
+Adversarial re-audit of v0.2.0, defect fixes, and a measured capability uplift. Detail:
+[`EPISTEMOS_V0_3_FINAL_REPORT.md`](EPISTEMOS_V0_3_FINAL_REPORT.md), audit
+[`audit/EPISTEMOS_V0_2_AUDIT.md`](audit/EPISTEMOS_V0_2_AUDIT.md).
+
+| Gate | State | Evidence |
+|------|-------|----------|
+| REBASELINE (cold) | ✅ | v0.2 gates reproduced cold: 616 tests, ruff, mypy, mutation 18/18, benchmark |
+| ADVERSARIAL_AUDIT | ✅ | `audit/EPISTEMOS_V0_2_AUDIT.md`; 43 findings verified (108-agent sweep), each material one → red test |
+| AUDIT_FINDINGS_RESOLVED | ✅ | 0 material findings open; residuals classified LOW/KNOWN_GAP/FUTURE (documented) |
+| A-01 import scope authority | ✅ | `tests/security/test_import_scope.py`; mutant `core_import_scope_authority` |
+| A-02 migrate verification | ✅ | `test_import_scope.py`, `test_schema_migration.py` |
+| A-11 scoped export | ✅ | `tests/security/test_export_scope.py` |
+| A-12 belief closes once | ✅ | `tests/unit/test_belief_close_once.py`; mutants `core_open_belief_guard`, `core_belief_reclose` |
+| RETRIEVAL_PARITY (ADR-021) | ✅ | `tests/index/test_fallback_parity.py` — a constraint filters on both paths |
+| AGENT/SOURCE ISOLATION | ✅ | `tests/security/test_mutation_guards.py` — confirm delta, merge/split guard, source deref |
+| INDEX HEALTH TRUSTWORTHY | ✅ | `tests/index/test_index_robustness.py` — verify content drift, rebuild health, ensure_built |
+| BOUNDARY FAIL-CLOSED | ✅ | `tests/security/test_boundary_hardening.py` — REST None, health scope, get oracle, MCP crash |
+| TEMPORAL QUERY CONSISTENCY | ✅ | `tests/unit/test_temporal_query_consistency.py` — clock-independent "believed now" |
+| PROVENANCE_INDEX (C2) | ✅ | ADR-022; `tests/index/test_provenance_index.py`; explain() 33 800× at 100k, flat |
+| UNICODE_SEARCH (C1) | ✅ | ADR-023; `tests/index/test_unicode_tokenizer.py` + fuzz; opt-in, scan/index parity |
+| CAPABILITY_CENSUS | ✅ | `roadmap/EPISTEMOS_CAPABILITY_ROADMAP.md` (measurement-driven) |
+| SECURITY | ✅ | `tests/security/` incl. 6 new EPISTEMOS-03 files |
+| RACE | ✅ | `tests/race/` (30 cycles/scenario) — no regression |
+| CHAOS | ✅ | `tests/chaos/` — no regression |
+| MUTATION | ✅ | 25/25 killed, 0 survived, 0 invalid (7 new EPISTEMOS-03 boundary mutants) |
+| BENCHMARK | ✅ | `benchmarks/EPISTEMOS_03_FINAL_BENCHMARK.md` (before/after; costs disclosed) |
+| FULL_REGRESSION (v0.1+v0.2) | ✅ | 700 tests green; ruff + mypy --strict clean |
+| DOCS / ADRS (021–023) | ✅ | `docs/adr/`, audit, benchmark, roadmap, `docs/collaboration/` |
+| COLLABORATIVE_ARCHITECTURE_ASSESSED | ✅ | `docs/collaboration/COLLABORATIVE_KNOWLEDGE_MODEL.md` (Q1–Q15 + output block) |
+| ZERO_EGRESS / NULL_LLM | ✅ | re-verified across the full lifecycle incl. index path |
+| WORKTREE_CLEAN | ✅ | `git status --porcelain` empty at freeze |
+| NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | no EPISTEMOS-caused change vs ETAPA-0 baseline |
+
+`STATUS_FINAL = EPISTEMOS_V0_3_PASS` — tag `epistemos-v0.3.0` (v0.1.0 and v0.2.0 unchanged).
