@@ -34,6 +34,11 @@ CREATE INDEX IF NOT EXISTS idx_fts_map_rid ON fts_map(rid);
 """
 
 
+#: Text used to detect whether a tokenizer rewrites content before indexing. It contains a plural,
+#: an accent and mixed case, so any of the transformations E-2 measured shows up in the result.
+_PROBE = "Several audits were recorded in São Paulo"
+
+
 class SqliteFtsIndex(LexicalIndex):
     def __init__(self, store: SQLiteStore, *, tokenizer: Tokenizer = ASCII) -> None:
         self._store = store
@@ -61,7 +66,7 @@ class SqliteFtsIndex(LexicalIndex):
         try:
             with self._lock:
                 self._remove_locked(obj["id"])
-                text = object_text(obj)
+                text = self._indexed_text(obj)
                 if not text:
                     return
                 self._conn.execute(
@@ -161,8 +166,20 @@ class SqliteFtsIndex(LexicalIndex):
             stored = row[0] if row is not None else None
             obj_count = int(self._conn.execute("SELECT COUNT(*) FROM objects").fetchone()[0])
         if stored != self._tokenizer.name:
+            # A tokenizer change is a change of *persisted representation* (E-3), so the old
+            # index is not merely stale, it is written in a different language. Drop it whole and
+            # rebuild: a partially-migrated index would answer some queries in the old
+            # representation and some in the new, which is worse than no index at all.
             self._recreate_table()
             self.rebuild(store)
+            if not self.verify(store):
+                # Fail closed. The rebuild produced something that does not match the
+                # authoritative objects, so the index must not be trusted or recorded as
+                # migrated: leave it DEGRADED and let the engine fall back to the scan path,
+                # which is correct and merely slower. Recording the new tokenizer name here
+                # would make the next open believe the migration succeeded.
+                self.mark_degraded()
+                return
             with self._lock:
                 self._conn.execute(
                     "INSERT OR REPLACE INTO meta(key, value) VALUES ('fts_tokenizer', ?)",
@@ -193,6 +210,17 @@ class SqliteFtsIndex(LexicalIndex):
         if self._state != IndexHealth.UNAVAILABLE:
             self._state = IndexHealth.HEALTHY
 
+    def _indexed_text(self, obj: dict[str, Any]) -> str:
+        """The exact bytes stored in the FTS content cell.
+
+        This is the persisted *representation*, not the object's text. SQLite tokenizes what is
+        stored here, so normalising before the insert is what keeps the index in agreement with a
+        query normalised by the same tokenizer (E-3). For a tokenizer whose ``normalize_text`` is
+        identity — every tokenizer shipped before E-3 — this is byte-for-byte the old behaviour.
+        """
+        text = object_text(obj)
+        return self._tokenizer.normalize_text(text) if text else text
+
     def _searchable_ids(self) -> set[str]:
         import json
 
@@ -201,9 +229,83 @@ class SqliteFtsIndex(LexicalIndex):
             rows = self._conn.execute("SELECT json FROM objects").fetchall()
         for (blob,) in rows:
             obj = json.loads(blob)
-            if object_text(obj):
+            if self._indexed_text(obj):
                 ids.add(obj["id"])
         return ids
+
+    def verify_detail(self, store: Any = None) -> dict[str, Any]:
+        """Verify the index and report *what* was compared, not just whether it agreed.
+
+        A boolean says the index is consistent; it does not say consistent *with what*. Since E-3
+        the indexed content is a normalised representation rather than the object's text, so a
+        reader has to be able to see all four layers to trust the answer (mission E-3 §5):
+
+        ``original`` the object's searchable text · ``normalized`` what the tokenizer says should
+        be stored · ``indexed`` what is actually in the FTS content cell · ``tokens`` how the
+        stored form tokenizes. When ``ok`` is false, ``divergences`` names the first offenders
+        rather than making the caller diff two databases by hand.
+        """
+        import json
+
+        if self._state == IndexHealth.UNAVAILABLE:
+            return {"ok": False, "reason": "index unavailable", "checked": 0, "divergences": []}
+        with self._lock:
+            mapping = {r[0]: r[1] for r in
+                       self._conn.execute("SELECT obj_id, rid FROM fts_map").fetchall()}
+            content = {r[0]: r[1] for r in
+                       self._conn.execute("SELECT rowid, content FROM fts_idx").fetchall()}
+            rows = self._conn.execute("SELECT json FROM objects").fetchall()
+
+        divergences: list[dict[str, Any]] = []
+        expected: dict[str, dict[str, Any]] = {}
+        for (blob,) in rows:
+            obj = json.loads(blob)
+            original = object_text(obj)
+            if not original:
+                continue
+            expected[obj["id"]] = {
+                "original": original,
+                "normalized": self._tokenizer.normalize_text(original),
+            }
+
+        missing = sorted(set(expected) - set(mapping))
+        extra = sorted(set(mapping) - set(expected))
+        for obj_id in missing[:5]:
+            divergences.append({"obj_id": obj_id, "problem": "indexed=absent",
+                                **expected[obj_id]})
+        for obj_id in extra[:5]:
+            divergences.append({"obj_id": obj_id, "problem": "indexed=orphan"})
+
+        for obj_id, rid in mapping.items():
+            if obj_id not in expected:
+                continue
+            want = expected[obj_id]["normalized"]
+            got = content.get(rid)
+            if got != want and len(divergences) < 10:
+                divergences.append({
+                    "obj_id": obj_id, "problem": "content drift",
+                    "original": expected[obj_id]["original"][:120],
+                    "normalized": want[:120],
+                    "indexed": (got or "")[:120],
+                    "tokens_expected": self._tokenizer.tokens(want)[:12],
+                    "tokens_indexed": self._tokenizer.tokens(got or "")[:12],
+                })
+
+        ok = not missing and not extra and not any(
+            d["problem"] == "content drift" for d in divergences)
+        if not ok and self._state == IndexHealth.HEALTHY:
+            self._state = IndexHealth.DEGRADED
+        return {
+            "ok": ok,
+            "checked": len(expected),
+            "indexed": len(mapping),
+            "tokenizer": self._tokenizer.name,
+            # Probe with words the transformation would actually touch; "x y" is unchanged by
+            # every conservative rule and would report identity for a tokenizer that normalises.
+            "representation": ("identity" if self._tokenizer.normalize_text(_PROBE) == _PROBE
+                               else "normalized"),
+            "divergences": divergences,
+        }
 
     def verify(self, store: Any = None) -> bool:
         if self._state == IndexHealth.UNAVAILABLE:
@@ -227,7 +329,7 @@ class SqliteFtsIndex(LexicalIndex):
         searchable = {}
         for (blob,) in rows:
             obj = json.loads(blob)
-            text = object_text(obj)
+            text = self._indexed_text(obj)
             if text:
                 searchable[obj["id"]] = text
         ok = (set(mapping) == set(searchable)) and (map_count == idx_count)
@@ -264,7 +366,7 @@ class SqliteFtsIndex(LexicalIndex):
     def _reindex_healthy(self, obj: dict[str, Any]) -> None:
         """Reindex that raises on error (used by rebuild, which owns the transaction)."""
         self._remove_locked(obj["id"])
-        text = object_text(obj)
+        text = self._indexed_text(obj)
         if not text:
             return
         with self._lock:
