@@ -148,12 +148,16 @@ def _usable_value(value: str) -> bool:
 class PatternRule:
     """A rule driven by one regex with named groups ``key``/``subject``/``object``.
 
-    The pattern must be anchored enough that a match is unambiguous. Two shapes are supported:
+    The pattern must be anchored enough that a match is unambiguous. Three shapes are supported:
 
-    * **Document-scoped** (``document_subject=True``): the match's ``key`` group becomes the
-      predicate and the subject is the document itself. `Owner: Alice` in a runbook is a statement
-      *about the runbook*, so it compiles to ``(<doc title>, owner, Alice)``. Reading it as
-      ``(Owner, …, Alice)`` would invent an entity called "Owner".
+    * **Document-scoped** (``document_subject=True``, no ``predicate``): the match's ``key`` group
+      becomes the predicate and the subject is the document itself. `Owner: Alice` in a runbook is
+      a statement *about the runbook*, so it compiles to ``(<doc title>, owner, Alice)``. Reading
+      it as ``(Owner, …, Alice)`` would invent an entity called "Owner".
+    * **Document-scoped with a fixed predicate** (``document_subject=True`` and ``predicate``):
+      the subject is the document and the predicate is the rule's own. Markup that *relates the
+      document to a named thing* — a `[[wikilink]]`, a `#tag` — has no ``key`` group to read; the
+      rule itself is the predicate: ``(<doc title>, links_to, Target)``.
     * **Relational**: ``subject`` and ``object`` both come from the text and ``predicate`` is fixed
       by the rule — `Alice works at Acme` -> ``(Alice, works_at, Acme)``.
     """
@@ -172,7 +176,8 @@ class PatternRule:
 
             if self.document_subject:
                 subj = subject
-                predicate = _normalize_predicate(m.group("key"))
+                # Lazy on purpose: a fixed-predicate rule has no ``key`` group to read.
+                predicate = self.predicate or _normalize_predicate(m.group("key"))
             else:
                 subj = _clean(m.group("subject"))
                 predicate = self.predicate

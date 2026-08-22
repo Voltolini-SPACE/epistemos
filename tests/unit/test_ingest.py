@@ -150,6 +150,33 @@ def test_a_custom_rule_can_be_supplied():
     ]
 
 
+def test_document_subject_with_a_fixed_predicate_needs_no_key_group():
+    """Markup that relates the document to a named thing has no key to read — the rule itself
+    is the predicate. The pattern therefore only needs an ``object`` group."""
+    rule = PatternRule(
+        name="mention",
+        pattern=re.compile(r"@(?P<object>\w+)"),
+        predicate="mentions",
+        document_subject=True,
+    )
+    got = compile_text("ping @alice and @bruno", subject="note", rules=(rule,))
+    assert [(e.subject, e.predicate, e.object) for e in got] == [
+        ("note", "mentions", "alice"),
+        ("note", "mentions", "bruno"),
+    ]
+
+
+def test_document_subject_without_a_predicate_still_reads_the_key_group():
+    """The original shape is untouched: no fixed predicate means the key is the predicate."""
+    rule = PatternRule(
+        name="kv",
+        pattern=re.compile(r"^(?P<key>\w+)=(?P<object>\w+)$", re.MULTILINE),
+        document_subject=True,
+    )
+    got = compile_text("Owner=alice", subject="note", rules=(rule,))
+    assert [(e.subject, e.predicate, e.object) for e in got] == [("note", "owner", "alice")]
+
+
 def test_overlap_resolution_prefers_the_higher_confidence_reading():
     weak = PatternRule(name="weak", pattern=re.compile(r"(?P<subject>A+)(?P<object>B+)"),
                        predicate="p", confidence=0.2)
