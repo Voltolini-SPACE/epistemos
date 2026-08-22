@@ -85,9 +85,21 @@ declaráveis.
 
 ## Recomendação
 
-Não perseguir embeddings com base neste resultado. O que E-4 mostra é que **a expansão de consulta
-é o mecanismo errado**, porque paga precisão em todas as categorias para comprar recall em duas.
-Se cross-lingual e sinônimo forem prioridade, o caminho é *recuperação em duas fases* — os
-candidatos semânticos entram numa lista separada, com a lista lexical permanecendo autoritativa e
-o resultado semântico rotulado como tal — e não uma consulta alargada que contamina o ranking
-único. Isso é uma missão de arquitetura, não de tuning.
+Não perseguir embeddings com base neste resultado.
+
+O que E-4 demonstra, com precisão: **a expansão de consulta como mecanismo único de ranking, nas
+estratégias testadas e neste corpus, não produz melhoria adotável.** Ela paga precisão em todas as
+categorias para comprar recall em duas.
+
+Isso é deliberadamente mais estreito que "expansão de consulta é o mecanismo errado" — uma
+formulação anterior desta página, corrigida porque transformava um resultado negativo localizado
+numa impossibilidade arquitetural geral. Três estratégias falharam num corpus; isso não fecha o
+espaço de projeto, e afirmar que fecha seria o mesmo tipo de overclaim que este documento existe
+para evitar. Aumentar o corpus, ajustar `k` ou mexer nos pesos, porém, não tem evidência a favor:
+os recibos mostram que os mecanismos aprendem relações **diferentes** da desejada, e mais dados da
+mesma natureza dariam mais da mesma relação.
+
+Se cross-lingual e sinônimo forem prioridade, a continuidade deve ser uma missão de arquitetura
+com contrato explícito — `lexical authoritative → semantic candidate retrieval → evidência
+semântica separada e rotulada → fusão controlada` — e não uma nova tentativa de contaminar o
+ranking lexical por expansão. Missão de arquitetura, não de tuning.
