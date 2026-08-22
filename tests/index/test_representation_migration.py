@@ -277,3 +277,51 @@ def test_verify_detail_exposes_a_corrupted_content_cell(tmp_path):
 def test_get_tokenizer_resolves_the_new_name():
     assert get_tokenizer("plural") is PLURAL
     assert get_tokenizer(PLURAL) is PLURAL
+
+
+# -- the default on open inherits the stored representation (E-5) ------------
+
+
+def test_opening_without_a_tokenizer_inherits_the_stored_one(tmp_path):
+    """The default must never migrate. A caller that merely opens a store — verify, serve —
+    inherits the persisted representation; rebuilding to ascii because a flag was omitted is a
+    silent data change on a read path."""
+    path = str(tmp_path / "kb.epistemos")
+    eng = Engine.open(path, tokenizer="unicode")
+    _seed(eng)
+    eng.close()
+
+    reopened = Engine.open(path)  # no tokenizer argument at all
+    assert reopened.tokenizer.name == "unicode"
+    stored = reopened.store._conn.execute(
+        "SELECT value FROM meta WHERE key = 'fts_tokenizer'").fetchone()
+    assert stored[0] == "unicode", "a default open must not rewrite the representation"
+    assert reopened.lexical_index.health() == IndexHealth.HEALTHY
+    assert reopened.lexical_index.verify_detail()["ok"]
+    reopened.close()
+
+
+def test_an_explicit_tokenizer_still_wins_and_still_migrates(tmp_path):
+    path = str(tmp_path / "kb.epistemos")
+    eng = Engine.open(path, tokenizer="unicode")
+    _seed(eng)
+    eng.close()
+
+    back = Engine.open(path, tokenizer="ascii")
+    assert back.tokenizer.name == "ascii"
+    stored = back.store._conn.execute(
+        "SELECT value FROM meta WHERE key = 'fts_tokenizer'").fetchone()
+    assert stored[0] == "ascii"
+    back.close()
+
+
+def test_a_new_store_defaults_to_ascii():
+    eng = Engine.open(None)
+    assert eng.tokenizer.name == "ascii"
+    eng.close()
+
+
+def test_a_new_sqlite_store_defaults_to_ascii(tmp_path):
+    eng = Engine.open(str(tmp_path / "fresh.epistemos"))
+    assert eng.tokenizer.name == "ascii"
+    eng.close()

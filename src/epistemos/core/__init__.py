@@ -18,6 +18,7 @@ data (never executed, never dereferenced); the core makes no network calls.
 from __future__ import annotations
 
 import math
+import sqlite3
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from dataclasses import fields as dc_fields
@@ -129,6 +130,34 @@ class EngineLimits:
     )
 
 
+def _stored_tokenizer_name(store: Store) -> str | None:
+    """The tokenizer name a SQLite database already records, or ``None``.
+
+    The FTS table's ``tokenize=`` is fixed at CREATE, so a tokenizer change means drop + rebuild
+    of the index (ADR-023). That makes the *default* on open load-bearing: a caller that merely
+    opens a store to read it must inherit the persisted representation, never rewrite it. An
+    unreadable or unknown record answers ``None`` — the caller falls back to "ascii", which is
+    also what an index built by older versions used.
+    """
+    if not isinstance(store, SQLiteStore):
+        return None
+    try:
+        with store._lock:
+            row = store._conn.execute(
+                "SELECT value FROM meta WHERE key = 'fts_tokenizer'"
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None or row[0] is None:
+        return None
+    name = str(row[0])
+    try:
+        get_tokenizer(name)
+    except ValueError:
+        return None
+    return name
+
+
 class Engine:
     def __init__(
         self,
@@ -137,7 +166,7 @@ class Engine:
         clock: Clock = now_utc,
         retriever: Retriever | None = None,
         limits: EngineLimits | None = None,
-        tokenizer: str | Tokenizer = "ascii",
+        tokenizer: str | Tokenizer | None = None,
         policy: Policy | None = None,
     ) -> None:
         self.store = store
@@ -148,9 +177,15 @@ class Engine:
         # standalone; a NOMOS/other PDP adapter can replace it without the core depending on it.
         self.policy: Policy = policy or LocalDefaultPolicy()
         weights = retriever.weights if retriever is not None else None
-        # Tokenizer selects how text is split for search. "ascii" (default) is the v0.1/v0.2
-        # behaviour; "unicode" (ADR-023) folds diacritics and indexes non-ASCII scripts, using
-        # SQLite as the single tokenization authority so the scan and index agree exactly.
+        # Tokenizer selects how text is split for search. "unicode" (ADR-023) folds diacritics
+        # and indexes non-ASCII scripts, using SQLite as the single tokenization authority so the
+        # scan and index agree exactly. `None` (the default) INHERITS whatever the database
+        # already records, falling back to "ascii" (the v0.1/v0.2 behaviour) for new stores:
+        # a tokenizer change means drop + rebuild of the FTS index, and a caller merely *opening*
+        # a store — `verify`, `serve` — must never mutate its persisted representation because a
+        # flag was omitted. An explicit name still wins, and still rebuilds.
+        if tokenizer is None:
+            tokenizer = _stored_tokenizer_name(store) or "ascii"
         self.tokenizer = get_tokenizer(tokenizer)
         self.legacy = LegacyScanRetriever(weights, self.tokenizer)
         self.retriever = self.legacy  # back-compat attribute
@@ -179,12 +214,14 @@ class Engine:
         clock: Clock = now_utc,
         weights: Weights | None = None,
         limits: EngineLimits | None = None,
-        tokenizer: str | Tokenizer = "ascii",
+        tokenizer: str | Tokenizer | None = None,
     ) -> Engine:
         """Open an engine over a local file (SQLite) or ``None``/``":memory:"`` (in-memory).
 
         ``tokenizer="unicode"`` enables diacritic-folding, non-ASCII search (ADR-023); the FTS
         index is rebuilt automatically if the stored tokenizer differs from the requested one.
+        ``tokenizer=None`` (the default) inherits the tokenizer the database already records —
+        opening is never a silent rebuild — and uses ``"ascii"`` for new stores.
         """
         return cls(
             open_store(target),
