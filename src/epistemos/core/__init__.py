@@ -572,6 +572,15 @@ class Engine:
             self._emit(principal, Op.OBSERVATION_RECORDED, ts, obj)
         return Observation.from_dict(obj)
 
+    @staticmethod
+    def document_content_hash(*, title: str, text: str, mime: str = "text/plain") -> str:
+        """The identity hash `ingest_document` records as ``source_hash``.
+
+        Exposed so batch callers (the CLI, a vault sync) can ask "is this exact content already
+        stored?" without re-implementing the formula — one definition, three users.
+        """
+        return hash_obj({"title": title, "text": text, "mime": mime})
+
     def ingest_document(
         self,
         principal: Principal,
@@ -603,7 +612,7 @@ class Engine:
             metadata=self._metadata(metadata),
         )
         obj = doc.to_dict()
-        obj["source_hash"] = hash_obj({"title": title, "text": text, "mime": mime})
+        obj["source_hash"] = self.document_content_hash(title=title, text=text, mime=mime)
         with self.store.atomic():
             self._emit(principal, Op.DOCUMENT_INGESTED, ts, obj)
         return Document.from_dict(obj)
@@ -616,6 +625,7 @@ class Engine:
         rules: Sequence[Any] | None = None,
         space: str | None = None,
         claimant: str | None = None,
+        known_keys: set[str] | None = None,
     ) -> CompilationResult:
         """Compile a stored document into **candidate claims**, deterministically and with no model.
 
@@ -631,6 +641,11 @@ class Engine:
           extraction carries a deterministic key over (document, source hash, rule, span, triple).
 
         Returns the claims created, the keys skipped as already-present, and the per-rule tally.
+
+        ``known_keys`` is a batch optimisation: rebuilding the already-present set is a full
+        claims scan, so compiling a whole vault would be O(files x claims). A caller may build
+        the set once and pass it in; it is **mutated in place** with every key created, so the
+        same set carries correctly across a batch. ``None`` (the default) keeps the scan.
         """
         from ..ingest import Compiler  # noqa: PLC0415 - keeps the core import graph flat
 
@@ -647,7 +662,7 @@ class Engine:
         compiler = Compiler(rules=tuple(rules)) if rules is not None else Compiler()
         extractions = compiler.compile(text, subject=title)
 
-        existing = {
+        existing = known_keys if known_keys is not None else {
             str(obj.get("metadata", {}).get("compile_key"))
             for obj in self.store.objects(principal.tenant, principal.namespace, "claim")
             if isinstance(obj.get("metadata"), dict) and obj["metadata"].get("compile_key")

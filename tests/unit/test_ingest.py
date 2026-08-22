@@ -253,6 +253,35 @@ def test_recompiling_an_unchanged_document_creates_nothing(engine, ctx):
     assert len(claims) == first.created
 
 
+def test_known_keys_matches_the_scan_path_and_carries_across_a_batch(engine, ctx):
+    """`known_keys` is only an optimisation: same results as the scan, and because it is mutated
+    in place the same set carries dedupe state correctly across a batch of documents."""
+    keys: set[str] = set()
+    doc = _doc(engine, ctx)
+    first = engine.compile_document(ctx, document=doc.id, known_keys=keys)
+    assert first.created > 0
+    assert len(keys) == first.created
+
+    # Second compile through the SAME set: everything skipped, nothing created.
+    again = engine.compile_document(ctx, document=doc.id, known_keys=keys)
+    assert again.created == 0
+    assert len(again.skipped) == first.created
+
+    # And the default scan path agrees with the batch path.
+    scanned = engine.compile_document(ctx, document=doc.id)
+    assert scanned.created == 0
+    assert len(scanned.skipped) == first.created
+
+
+def test_document_content_hash_is_the_stored_identity(engine, ctx):
+    doc = _doc(engine, ctx)
+    from epistemos.core import Engine
+
+    assert doc.source_hash == Engine.document_content_hash(
+        title="Payments API runbook", text=RUNBOOK
+    )
+
+
 def test_a_different_document_with_the_same_text_compiles_on_its_own(engine, ctx):
     """Dedupe is per (document, content) — two documents that happen to agree are still two."""
     a = _doc(engine, ctx, text="Owner: Alice\n", title="A")

@@ -159,8 +159,6 @@ def _cmd_compile(args: argparse.Namespace, rest: list[str]) -> int:
                 sys.stdout.write(f"      {e.span.text(text)!r}\n")
         return 0
 
-    from ._util import hash_obj  # noqa: PLC0415
-
     engine = Engine.open(args.db)
     principal = Principal(tenant=args.tenant, agent=args.agent, namespace=args.namespace)
     try:
@@ -168,7 +166,7 @@ def _cmd_compile(args: argparse.Namespace, rest: list[str]) -> int:
         # reuse the document rather than ingest a near-duplicate — otherwise every run would
         # produce a fresh document id, defeat the content-keyed dedupe, and silently multiply
         # the same claims. Identity is the content hash the Engine already stores.
-        digest = hash_obj({"title": title, "text": text, "mime": "text/plain"})
+        digest = Engine.document_content_hash(title=title, text=text)
         existing = next(
             (obj for obj in engine.store.objects(args.tenant, args.namespace, "document")
              if obj.get("source_hash") == digest),
