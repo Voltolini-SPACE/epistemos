@@ -56,6 +56,7 @@ from .model import (
     Source,
 )
 from .providers import ModelProvider, NullModelProvider
+from .receipt import RECEIPT_VERSION, ReceiptChain, RetrievalReceipt
 from .retrieval import Retriever, Weights
 from .spaces import KnowledgeSpace, Visibility
 from .storage import MemoryStore, SQLiteStore, Store, open_store
@@ -74,6 +75,9 @@ __all__ = [
     "compile_text",
     "Engine",
     "EngineLimits",
+    "RECEIPT_VERSION",
+    "ReceiptChain",
+    "RetrievalReceipt",
     "Principal",
     # model
     "SCHEMA_VERSION",

@@ -259,6 +259,11 @@ generic agent harness, without coupling the core to any consumer. ADR-038…044.
 | INGESTION_IDEMPOTENT | ✅ | re-compiling an unchanged document creates 0; `epistemos compile` reuses the document by content hash |
 | INGESTION_ISOLATION | ✅ | `tests/security/test_ingest_isolation.py` — dedupe scan is tenant/namespace-scoped; no cross-tenant skip, no URI dereference |
 | INGESTION_NULL_LLM | ✅ | compiles under `NullModelProvider` and under a socket trap — no model, no egress |
+| RETRIEVAL_RECEIPT | ✅ | `tests/unit/test_receipt.py` — seals query hash, projection version, scorer, weights, ranks, scores and score breakdowns; verifies; detects edit, re-order, truncation and deletion |
+| RECEIPT_DETERMINISTIC | ✅ | same query + same projection ⇒ identical `receipt_hash` (5 runs); execution metadata deliberately outside the digest |
+| TIE_BREAK_DECLARED | ✅ | `tests/unit/test_retrieval_order.py` — score DESC then id ASCENDING, independent of insertion order |
+| ADVERSARIAL_RETRIEVAL | ✅ | keyword stuffing no longer outranks a real statement (document-length normalisation); empty/whitespace query fails closed instead of listing everything |
+| E1_BENCHMARK | ✅ | 520 docs / 170 queries / 9 categories, deterministic corpus digest; `docs/benchmarks/E1_RETRIEVAL.md` |
 | RACE_DETERMINISTIC | ✅ | `tests/race/` 360/360 on repeated runs **and under saturated CPU**. Previously load-dependent (4/12/14 failures across runs) because `backup()` read the transaction depth outside the lock — see `PUBLIC_CLAIMS_AUDIT.md` correction 7 |
 | DOCS / ADRS (038–044) | ✅ | `docs/protocol/` (10), `docs/integrations/` (4), `docs/adr/` |
 | ZERO_EGRESS / LOCAL_FIRST / MIT | ✅ | stdlib-only transports; localhost REST; MIT |

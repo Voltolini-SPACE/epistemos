@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
+from dataclasses import fields as dc_fields
 from datetime import UTC, datetime
 from typing import Any, Literal, overload
 
@@ -68,6 +69,7 @@ from ..model import (
 )
 from ..provenance import explain as _explain_obj
 from ..provenance import explain_decision as _explain_decision
+from ..receipt import RetrievalReceipt
 from ..retrieval import IndexedRetriever, LegacyScanRetriever, Retriever, Weights
 from ..spaces import KnowledgeSpace, Visibility, resolve_visibility
 from ..storage import SQLiteStore, Store, open_store
@@ -76,6 +78,19 @@ from ..temporal import resolve_current
 __all__ = ["Engine", "EngineLimits"]
 
 _UNSET: Any = object()
+
+
+def _weights_of(retriever: Any) -> dict[str, float]:
+    """Scoring weights as a plain mapping, for sealing into a retrieval receipt.
+
+    ``Weights`` is a frozen slots dataclass and therefore has no ``__dict__``. Reading its declared
+    fields keeps a receipt honest if a weight is ever added: a hand-listed subset would silently
+    seal an incomplete record of how the ranking was produced.
+    """
+    weights = getattr(retriever, "weights", None)
+    if weights is None:
+        return {}
+    return {f.name: float(getattr(weights, f.name)) for f in dc_fields(weights)}
 
 _KIND_TO_CLS: dict[str, Any] = {
     "fact": Fact,
@@ -2033,6 +2048,64 @@ class Engine:
             }
             for r in results
         ]
+
+    def search_sealed(
+        self,
+        principal: Principal,
+        *,
+        text: str | None = None,
+        previous: RetrievalReceipt | None = None,
+        secret: bytes | None = None,
+        **kwargs: Any,
+    ) -> tuple[list[dict[str, Any]], RetrievalReceipt]:
+        """Run a search and seal exactly what it returned into a verifiable receipt.
+
+        The ledger proves what was *written*; this proves what was *shown*. Re-running the query
+        later cannot answer "what did the agent see?", because the projection has moved on — the
+        receipt pins the query, the projection version, the scorer, the weights and the ordered
+        results with their score breakdowns.
+
+        Sealing is not accepting. A receipt records that these candidates were returned in this
+        order; whether any of them is true stays a matter for evidence, review and governance.
+        """
+        started = self._now()
+        results = self.search(principal, text=text, **kwargs)
+        # Sealed per result: identity, rank, score and the *decomposed* score, so "why was this
+        # ranked here?" is answerable from the receipt alone, without the store.
+        sealed = [
+            {
+                "rank": i,
+                "id": r["id"],
+                "kind": r["kind"],
+                "score": round(float(r["score"]), 12),
+                "score_components": {k: round(float(v), 12)
+                                     for k, v in sorted((r.get("score_components") or {}).items())},
+                "source_id": (r.get("source") or {}).get("id"),
+                "temporal_state": r.get("temporal_state"),
+                "why_returned": r.get("why_returned"),
+            }
+            for i, r in enumerate(results, 1)
+        ]
+        receipt = RetrievalReceipt.seal(
+            tenant=principal.tenant,
+            namespace=principal.namespace,
+            agent=principal.agent,
+            query=text or "",
+            # The projection is identified by the ledger length it was built from: same length,
+            # same replayed state, so two receipts over the same number are comparable.
+            projection_version=self.store.event_count(),
+            weights=_weights_of(self.retriever),
+            results=sealed,
+            previous=previous,
+            secret=secret,
+            execution={
+                "retrieval_method": results[0]["retrieval_method"] if results else None,
+                "result_count": len(sealed),
+                "started_at": started,
+                "finished_at": self._now(),
+            },
+        )
+        return results, receipt
 
     def context(
         self,

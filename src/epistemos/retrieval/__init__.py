@@ -220,6 +220,15 @@ class LegacyScanRetriever(_BaseRetriever):
     ) -> list[Retrieved]:
         now = now_utc()
         query_terms = self._query_terms(text)
+        # Fail closed on a degenerate text query. `text=None` means "no text constraint" and a
+        # metadata-only search is legitimate; `text=""` (or whitespace, or punctuation) means a
+        # text search *was* requested and tokenized to nothing. Treating the second like the first
+        # turns an empty query string into `select *` — so a caller that builds a query from user
+        # input and receives an empty one would dump the corpus instead of returning nothing.
+        # ADR-021 already rules that a text query matching no term is not a hit; an empty query
+        # matches no term.
+        if text is not None and not query_terms:
+            return []
         trust_of = self._trust_lookup(store)
 
         candidates: list[dict[str, Any]] = []
@@ -246,6 +255,8 @@ class LegacyScanRetriever(_BaseRetriever):
             for term in set(toks):
                 df[term] = df.get(term, 0) + 1
         n_docs = max(1, len(candidates))
+        avg_len = ((sum(len(t) for t in doc_tokens.values()) / len(doc_tokens))
+                   if doc_tokens else 0.0)
 
         results: list[Retrieved] = []
         for obj in candidates:
@@ -254,24 +265,51 @@ class LegacyScanRetriever(_BaseRetriever):
                 source_trust=trust_of(obj), now=now, at_tx=at_tx, at_valid=at_valid,
             )
             if query_terms:
-                comp["lexical"] = _tfidf(query_terms, doc_tokens.get(obj["id"], []), df, n_docs)
+                comp["lexical"] = _tfidf(query_terms, doc_tokens.get(obj["id"], []), df, n_docs,
+                                         avg_len)
                 if not comp["lexical"]:
                     continue  # a text query that matched no term is not a hit (ADR-021)
             total = self._total(comp)
             if total <= 0.0:
                 continue
             results.append(_build(store, obj, total, comp))
-        results.sort(key=lambda r: (r.score, r.id), reverse=True)
+        # Documented total order (mission E-1 §15): score DESCENDING, then object id
+        # ASCENDING. The id is the tie-break of last resort and it is *ascending* on
+        # purpose — the previous `reverse=True` over the whole tuple ordered ids
+        # descending as a side effect of the score reversal, which was deterministic but
+        # unintended and undocumented. Nothing here may depend on SQLite row order,
+        # dict ordering or thread scheduling.
+        results.sort(key=lambda r: (-r.score, r.id))
         return results[:limit]
 
 
-def _tfidf(query_terms: list[str], doc_tokens: list[str], df: dict[str, int], n_docs: int) -> float:
+#: Document-length normalisation strength, as in BM25's `b`. Without it, term frequency alone
+#: decides, and a document that simply repeats the query terms outranks one that states the fact
+#: once — keyword stuffing beats content. 0.75 is the long-standing BM25 default.
+_LENGTH_NORM_B = 0.75
+
+
+def _tfidf(query_terms: list[str], doc_tokens: list[str], df: dict[str, int], n_docs: int,
+           avg_len: float = 0.0) -> float:
+    """Saturating TF-IDF with document-length normalisation.
+
+    ``avg_len`` is the mean document length over the candidate set. When it is unknown (0.0) the
+    normaliser collapses to 1.0 and the function behaves exactly as it did before length
+    normalisation existed, so a caller that cannot supply it is not silently penalised.
+    """
+    doc_len = len(doc_tokens)
+    norm = 1.0
+    if avg_len > 0.0 and doc_len:
+        norm = (1.0 - _LENGTH_NORM_B) + _LENGTH_NORM_B * (doc_len / avg_len)
     score = 0.0
     for term in query_terms:
         tf = doc_tokens.count(term)
         if tf:
             idf = math.log((n_docs + 1) / (df.get(term, 0) + 1)) + 1.0
-            score += (tf / (tf + 1.0)) * idf
+            # Dividing tf by the length norm before saturation is what makes repetition inside a
+            # long document worth less than the same term in a short, on-topic one.
+            adjusted = tf / norm
+            score += (adjusted / (adjusted + 1.0)) * idf
     max_possible = sum(math.log((n_docs + 1) / 1) + 1.0 for _ in query_terms)
     return float(min(1.0, score / max_possible)) if max_possible else 0.0
 
@@ -295,6 +333,10 @@ class IndexedRetriever(_BaseRetriever):
         authorize: Callable[[dict[str, Any]], bool] | None = None,
     ) -> list[Retrieved]:
         now = now_utc()
+        # Same fail-closed rule as the legacy scanner: a requested text search that tokenizes to
+        # nothing returns nothing, instead of silently degrading into an unfiltered listing.
+        if text is not None and not self.tokenizer.tokens(text):
+            return []
         trust_of = self._trust_lookup(store)
 
         pairs: list[tuple[dict[str, Any], float]] = []
@@ -343,7 +385,13 @@ class IndexedRetriever(_BaseRetriever):
             if total <= 0.0:
                 continue
             results.append(_build(store, obj, total, comp))
-        results.sort(key=lambda r: (r.score, r.id), reverse=True)
+        # Documented total order (mission E-1 §15): score DESCENDING, then object id
+        # ASCENDING. The id is the tie-break of last resort and it is *ascending* on
+        # purpose — the previous `reverse=True` over the whole tuple ordered ids
+        # descending as a side effect of the score reversal, which was deterministic but
+        # unintended and undocumented. Nothing here may depend on SQLite row order,
+        # dict ordering or thread scheduling.
+        results.sort(key=lambda r: (-r.score, r.id))
         return results[:limit]
 
 

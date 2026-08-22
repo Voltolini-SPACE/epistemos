@@ -59,6 +59,23 @@ For anything beyond what the rules can read with certainty, a `ModelProvider` ma
   [`benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md`](benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md)).
   Behaviour beyond that scale is not measured and is not claimed.
 
+## Retrieval quality, measured
+
+`benchmarks/e1_retrieval.py` runs 170 queries over 520 documents. Measured nDCG@10 by category:
+
+| solved (1.000) | partial | failing |
+|---|---|---|
+| exact, temporal, conflict, cross-reference, adversarial | paraphrase 0.238 | morphology 0.056 · cross-lingual 0.073 · synonym 0.025 |
+
+Morphology is the notable one: an inflected query term (`retentions` for `retention window`) is
+effectively not retrievable. A stemming tokenizer took it from 0.056 to 0.699 in the offline
+matrix, but adopting it changes the FTS index format and is deferred to its own cycle. Until then,
+**query with the term as written in the document.**
+
+Eight alternative scorers were measured and rejected: each beat the engine on morphology and
+paraphrase while regressing temporal, conflict and cross-reference from 1.000 to 0.80–0.88. See
+[`benchmarks/E1_RETRIEVAL.md`](benchmarks/E1_RETRIEVAL.md).
+
 ## Evaluation
 
 **No score on any shared benchmark.** The field compares agent-memory systems on LoCoMo,
