@@ -32,8 +32,10 @@ __all__ = [
     "Tokenizer",
     "AsciiTokenizer",
     "SqliteUnicodeTokenizer",
+    "PluralNormalisingTokenizer",
     "ASCII",
     "UNICODE",
+    "PLURAL",
     "get_tokenizer",
 ]
 
@@ -53,6 +55,22 @@ class Tokenizer:
 
     def tokens(self, text: str | None) -> list[str]:  # pragma: no cover - abstract
         raise NotImplementedError
+
+    def normalize_text(self, text: str) -> str:
+        """The representation that is *persisted* into the lexical index.
+
+        The FTS5 ``tokenize=`` option is fixed when the virtual table is created, so a
+        transformation SQLite cannot express (plural folding, alias expansion) cannot be pushed
+        down into the tokenizer. Pushing it *up* instead — normalising the text before it is
+        indexed — keeps both sides in agreement: SQLite tokenizes already-normalised content, and
+        a query normalised the same way produces terms that match it.
+
+        The default is identity, so a tokenizer that only changes how text is split (rather than
+        what it says) needs no migration and no override. E-2 measured what happens without this:
+        the scan path and the index path answered the same question differently, which breaks
+        RETRIEVAL_SEMANTIC_PARITY (ADR-021).
+        """
+        return text
 
 
 class AsciiTokenizer(Tokenizer):
@@ -106,10 +124,63 @@ class SqliteUnicodeTokenizer(Tokenizer):
         return [r[0] for r in rows]
 
 
+class PluralNormalisingTokenizer(AsciiTokenizer):
+    """ASCII tokenisation plus a conservative English singulariser (E-2 candidate B2).
+
+    Measured on the 520-document E-1 corpus: morphology nDCG@10 0.056 -> 0.520, global nDCG@10
+    +0.051, **no growth in indexed terms**, +1.6 ms p50, and no regression in any category. It is
+    deliberately not a stemmer — it removes a trailing plural marker and nothing else, so every
+    rule is one a reviewer can read and refute.
+
+    Opt-in. Selecting it re-creates and rebuilds the index, because the persisted representation
+    changes (``normalize_text`` is no longer identity).
+    """
+
+    name = "plural"
+    fts_tokenize = "ascii"
+
+    def tokens(self, text: str | None) -> list[str]:
+        if not text:
+            return []
+        return [_singular(t.lower()) for t in _TOKEN_RE.findall(text)]
+
+    def normalize_text(self, text: str) -> str:
+        """Rewrite the text into its indexed form: same words, singularised.
+
+        Non-word characters are preserved so the stored content stays readable and diffable — the
+        index is evidence too, and evidence you cannot read is worth less.
+        """
+        return _TOKEN_RE.sub(lambda m: _singular(m.group(0).lower()), text)
+
+
+#: Words whose trailing "s" is not a plural marker. Small and explicit on purpose: a list a
+#: reviewer can check beats a lexicon nobody audits.
+_KEEP_S = frozenset({
+    "as", "is", "us", "gas", "bus", "analysis", "basis", "status", "access", "process",
+    "class", "cross", "less", "loss", "miss", "pass", "press", "always", "https", "this",
+    "was", "has", "its", "yes", "news", "series", "species",
+})
+
+
+def _singular(word: str) -> str:
+    """Conservative English singulariser. Never changes a word it is unsure about."""
+    if len(word) <= 3 or word in _KEEP_S or not word.endswith("s"):
+        return word
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"                       # policies -> policy
+    if word.endswith(("ches", "shes", "sses", "xes", "zes")):
+        return word[:-2]                             # approaches -> approach
+    if word.endswith("ss"):
+        return word
+    return word[:-1]                                 # retentions -> retention
+
+
 ASCII = AsciiTokenizer()
+PLURAL = PluralNormalisingTokenizer()
 UNICODE = SqliteUnicodeTokenizer()
 
-_BY_NAME: dict[str, Tokenizer] = {ASCII.name: ASCII, UNICODE.name: UNICODE}
+_BY_NAME: dict[str, Tokenizer] = {ASCII.name: ASCII, UNICODE.name: UNICODE,
+                                  PLURAL.name: PLURAL}
 
 
 def get_tokenizer(name: str | Tokenizer) -> Tokenizer:
