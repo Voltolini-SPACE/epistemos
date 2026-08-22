@@ -120,6 +120,7 @@ contacts the network, and the servers bind `127.0.0.1` unless you say otherwise.
 
 ```bash
 epistemos compile runbook.md --dry-run     # what would be proposed — writes nothing
+epistemos ingest ~/vault --db kb.epistemos # idempotent Markdown-vault sync (ADR-045)
 epistemos panel --demo                     # read-only Panel on a real demo corpus
 epistemos serve --db kb.epistemos \
                 --token s3cret=claude      # authorized REST read model (401 without a token)

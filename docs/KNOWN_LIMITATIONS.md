@@ -34,7 +34,10 @@ do:
   and low recall here looks identical to "the document said nothing".
 - **English-shaped sentence rules.** The structural rules are language-neutral; the relational
   patterns (`works at`, `reports to`, `is a`, `is in`, `owns`) are not. Other languages need
-  custom rules — the registry is public and takes them, but none ship.
+  custom rules — the registry is public and takes them, but none ship. Since E-5 the *markup*
+  rules (`epistemos.ingest.markdown`: front matter, `[[wikilinks]]`, `#tags`) are
+  language-neutral too, and `epistemos ingest` walks a whole vault idempotently — but prose
+  stays English-only.
 - **Editing a document re-proposes its unchanged lines.** Provenance points at a specific document
   version, so a changed file is a new document and every extraction from it is new. Two documents
   asserting the same thing are deliberately *two* claims: in an evidence-first system, two
