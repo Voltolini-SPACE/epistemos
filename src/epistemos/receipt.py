@@ -60,6 +60,7 @@ class RetrievalReceipt:
     query_hash: str
     projection_version: int
     scorer_version: str
+    lexical_variant: str
     weights: Mapping[str, float]
     results: tuple[Mapping[str, Any], ...]
     receipt_hash: str
@@ -78,6 +79,7 @@ class RetrievalReceipt:
         query_hash: str,
         projection_version: int,
         scorer_version: str,
+        lexical_variant: str,
         weights: Mapping[str, float],
         results: Sequence[Mapping[str, Any]],
         previous_receipt_hash: str | None,
@@ -91,6 +93,11 @@ class RetrievalReceipt:
             "query_hash": query_hash,
             "projection_version": int(projection_version),
             "scorer_version": scorer_version,
+            # Which lexical representation produced these candidates. E-2 measured the same
+            # scorer returning materially different rankings under different tokenizers
+            # (morphology nDCG@10 0.056 -> 0.904), so a receipt that omitted this would name the
+            # ranking function while hiding the input to it — and could not be replayed.
+            "lexical_variant": lexical_variant,
             "weights": {k: float(v) for k, v in sorted(weights.items())},
             "results": [dict(r) for r in results],
             "previous_receipt_hash": previous_receipt_hash,
@@ -107,6 +114,7 @@ class RetrievalReceipt:
         projection_version: int,
         weights: Mapping[str, float],
         results: Sequence[Mapping[str, Any]],
+        lexical_variant: str,
         scorer_version: str = SCORER_VERSION,
         previous: RetrievalReceipt | None = None,
         execution: Mapping[str, Any] | None = None,
@@ -120,8 +128,8 @@ class RetrievalReceipt:
         payload = cls.canonical_payload(
             tenant=tenant, namespace=namespace, agent=agent,
             query_hash=sha256_hex(query), projection_version=projection_version,
-            scorer_version=scorer_version, weights=weights, results=results,
-            previous_receipt_hash=prev_hash,
+            scorer_version=scorer_version, lexical_variant=lexical_variant,
+            weights=weights, results=results, previous_receipt_hash=prev_hash,
         )
         digest = hash_obj(payload)
         sig = None
@@ -135,6 +143,7 @@ class RetrievalReceipt:
             query_hash=payload["query_hash"],
             projection_version=int(projection_version),
             scorer_version=scorer_version,
+            lexical_variant=lexical_variant,
             weights=payload["weights"],
             results=tuple(payload["results"]),
             receipt_hash=digest,
@@ -149,8 +158,9 @@ class RetrievalReceipt:
         return self.canonical_payload(
             tenant=self.tenant, namespace=self.namespace, agent=self.agent,
             query_hash=self.query_hash, projection_version=self.projection_version,
-            scorer_version=self.scorer_version, weights=self.weights,
-            results=self.results, previous_receipt_hash=self.previous_receipt_hash,
+            scorer_version=self.scorer_version, lexical_variant=self.lexical_variant,
+            weights=self.weights, results=self.results,
+            previous_receipt_hash=self.previous_receipt_hash,
         )
 
     def verify(self, *, secret: bytes | None = None) -> bool:
@@ -199,6 +209,7 @@ class RetrievalReceipt:
             query_hash=str(d["query_hash"]),
             projection_version=int(d["projection_version"]),
             scorer_version=str(d["scorer_version"]),
+            lexical_variant=str(d["lexical_variant"]),
             weights=dict(d["weights"]),
             results=tuple(dict(r) for r in d["results"]),
             receipt_hash=str(d["receipt_hash"]),

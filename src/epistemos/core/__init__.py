@@ -2095,6 +2095,7 @@ class Engine:
             # same replayed state, so two receipts over the same number are comparable.
             projection_version=self.store.event_count(),
             weights=_weights_of(self.retriever),
+            lexical_variant=self.tokenizer.name,
             results=sealed,
             previous=previous,
             secret=secret,
