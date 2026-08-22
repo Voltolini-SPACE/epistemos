@@ -15,6 +15,7 @@ Binds ``127.0.0.1``; nothing leaves the machine (local-first, zero-egress).
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import sys
 import threading
@@ -98,8 +99,29 @@ def main(argv: list[str] | None = None) -> int:
                 research = idmap["research_space"]
             threading.Thread(target=_live_demo, args=(engine, _Ids()), daemon=True).start()
 
-    server = make_panel_server(engine, host=args.host, port=args.port, tokens=tokens,
-                               demo_identities=demo_identities)
+    try:
+        server = make_panel_server(engine, host=args.host, port=args.port, tokens=tokens,
+                                   demo_identities=demo_identities)
+    except OSError as exc:
+        engine.close()
+        if exc.errno == errno.EADDRINUSE:
+            print(f"error: {args.host}:{args.port} is already in use.\n"
+                  f"       Another process is listening there — stop it, or pick a free port:\n"
+                  f"         epistemos panel --demo --port {args.port + 1}",
+                  file=sys.stderr)
+        elif exc.errno in (errno.EACCES, errno.EPERM):
+            print(f"error: not allowed to bind {args.host}:{args.port}.\n"
+                  f"       Ports below 1024 need elevated privileges — pick a higher port:\n"
+                  f"         epistemos panel --demo --port 8787",
+                  file=sys.stderr)
+        elif exc.errno == errno.EADDRNOTAVAIL:
+            print(f"error: {args.host} is not an address on this machine.\n"
+                  f"       Use --host 127.0.0.1 to serve locally.",
+                  file=sys.stderr)
+        else:
+            print(f"error: could not start the Panel on {args.host}:{args.port} — {exc}",
+                  file=sys.stderr)
+        return 2
     host, port = str(server.server_address[0]), int(server.server_address[1])
     url = f"http://{host}:{port}/"
     print(f"EPISTEMOS Panel — {url}  (local-first, zero-egress)")

@@ -22,6 +22,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Libraries",
 ]
 # Zero third-party runtime dependencies by design (local-first, zero-egress, minimal supply chain).
@@ -31,14 +32,23 @@ dependencies = []
 dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10"]
 
 [project.urls]
-Homepage = "https://github.com/epistemos/epistemos"
-Documentation = "https://github.com/epistemos/epistemos/tree/main/docs"
+Homepage = "https://voltolini.space/epistemos/"
+Repository = "https://github.com/Voltolini-SPACE/epistemos"
+Documentation = "https://github.com/Voltolini-SPACE/epistemos/tree/main/docs"
+Issues = "https://github.com/Voltolini-SPACE/epistemos/issues"
+
+[project.scripts]
+epistemos = "epistemos.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/epistemos"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The repo root must be importable: several conftests do `from tests.conftest import ...`,
+# and `tests/` is deliberately not a package. Without this, a bare `pytest` invocation fails
+# to collect (only `python -m pytest`, which injects CWD into sys.path, would work).
+pythonpath = ["."]
 addopts = "-q --strict-markers"
 markers = [
   "security: adversarial / attack-surface tests",
@@ -62,6 +72,11 @@ ignore = ["S101"]  # assert is fine in tests
 # S608: the SQLite adapter concatenates only STATIC SQL fragments; every value is passed
 # as a bound `?` parameter (never string-interpolated). Proven by tests/security/test_injection.py.
 "src/epistemos/storage/sqlite.py" = ["S608"]
+# S603: the mutation harnesses shell out to pytest with a fully literal argv (sys.executable
+# plus constants defined in the same file). No user, network or file input reaches the argv,
+# and neither module ships in the wheel — they are developer tooling, not runtime code.
+"tools/mutation_harness.py" = ["S603"]
+"tools/mutation_panel.py" = ["S603"]
 
 [tool.mypy]
 python_version = "3.11"

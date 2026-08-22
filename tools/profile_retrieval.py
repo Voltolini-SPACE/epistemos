@@ -109,13 +109,17 @@ def main() -> None:
     lines.append("2. The scan + per-object tokenization/normalization is inherently O(corpus) and "
                  "grows linearly with scale — the root cause of 116ms→722ms→7.4s (1k→10k→100k).")
     lines.append("3. Temporal filtering, source-trust lookup, and explainability metadata are "
-                 "**per-candidate**, so they also scale with the candidate set, not the result set.")
+                 "**per-candidate**, so they also scale with the candidate set, "
+                 "not the result set.")
     lines.append("")
     lines.append("## Conclusion")
     lines.append("")
-    lines.append("The fix is to **shrink the candidate set before scoring**: an inverted (FTS) index "
-                 "returns only the objects that match the query terms (O(matches)), and the existing "
-                 "explainable scorer runs over that small set — preserving temporal/authority/exact "
+    lines.append("The fix is to **shrink the candidate set before scoring**: "
+                 "an inverted (FTS) index "
+                 "returns only the objects that match the query terms (O(matches)), "
+                 "and the existing "
+                 "explainable scorer runs over that small set — preserving "
+                 "temporal/authority/exact "
                  "components while removing the full-corpus scan. See ADR-016/017.")
     lines.append("")
     lines.append("<details><summary>Top cProfile frames (cumulative)</summary>\n\n```")

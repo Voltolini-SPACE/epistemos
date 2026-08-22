@@ -148,7 +148,9 @@ MUTANTS = [
      "if vis == Visibility.TEAM:",
      "space-membership", "TEAM access requires ownership or a granted membership"),
     ("spaces_promote_cap_removed", "core/__init__.py",
-     'if dest_vis >= Visibility.ORGANIZATION and "admin" not in principal.capabilities:\n            principal.require("knowledge.promote")',
+     # noqa: this literal must match the source byte-for-byte to locate the mutation site.
+     # Reflowing it would silently stop the mutant from applying — a survivor that never ran.
+     'if dest_vis >= Visibility.ORGANIZATION and "admin" not in principal.capabilities:\n            principal.require("knowledge.promote")',  # noqa: E501
      'if False:\n            principal.require("knowledge.promote")',
      "space-promote", "promotion to ORG+ requires the knowledge.promote capability (§11)"),
     ("spaces_search_authorize_removed", "retrieval/__init__.py",
@@ -173,7 +175,8 @@ MUTANTS = [
      "if ev is not None:",
      "visibility-composition", "a public claim never exposes private evidence (§15)"),
     ("claim_ref_readable_oracle", "core/__init__.py",
-     'if not self._can_read(principal, obj):\n            raise NotFoundError(f"{what} {ref_id!r} not found")',
+     # noqa: exact-match mutation site (see the note above) — must not be reflowed.
+     'if not self._can_read(principal, obj):\n            raise NotFoundError(f"{what} {ref_id!r} not found")',  # noqa: E501
      'if False:\n            raise NotFoundError(f"{what} {ref_id!r} not found")',
      "claim-firewall", "a claim outside the caller's spaces is invisible (no oracle §17)"),
     ("claim_review_space_inherit_removed", "core/__init__.py",
@@ -253,8 +256,10 @@ def main() -> int:
 
 def _render(control_rc, results, total, killed, survived, invalid) -> str:
     lines = ["# EPISTEMOS Mutation Report (targeted critical-boundary harness)", ""]
-    lines.append("Method: per-mutant, copy the package, apply one source mutation, run the invariant")
-    lines.append("suite against the copy, classify by pytest **exit code** (mission §32). Reproduce:")
+    lines.append("Method: per-mutant, copy the package, apply one source mutation, "
+                 "run the invariant")
+    lines.append("suite against the copy, classify by pytest **exit code** "
+                 "(mission §32). Reproduce:")
     lines.append("`python tools/mutation_harness.py`.")
     lines.append("")
     lines.append(f"- CONTROL (unmutated copy) pytest rc = {control_rc} (0 = green baseline)")

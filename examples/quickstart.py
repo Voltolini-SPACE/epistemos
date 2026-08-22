@@ -24,14 +24,17 @@ def main() -> None:
                     valid_from="2026-02-01", source=hr.id)
 
     print("current employer:", eng.current(ctx, subject="Alice", predicate="works_at"))       # Beta
-    print("as of 2026-01-15:", eng.as_of(ctx, "2026-01-15", subject="Alice", predicate="works_at"))  # Alpha
+    print("as of 2026-01-15:",  # Alpha
+          eng.as_of(ctx, "2026-01-15", subject="Alice", predicate="works_at"))
 
     # A low-trust rumor contradicts the record but does NOT become current
     rumor = eng.add_source(ctx, uri="mem://watercooler", trust=0.05)
-    fr = eng.assert_fact(ctx, subject="Alice", predicate="works_at", object="Gamma", source=rumor.id)
+    fr = eng.assert_fact(ctx, subject="Alice", predicate="works_at", object="Gamma",
+                         source=rumor.id)
     beta = eng.facts_for(ctx, subject="Alice", object="Beta")[0]
     eng.contradict(ctx, fr.id, by=beta.id, note="rumor vs HR")
-    print("still current (authority wins):", eng.current(ctx, subject="Alice", predicate="works_at"))
+    print("still current (authority wins):",
+          eng.current(ctx, subject="Alice", predicate="works_at"))
 
     # A decision with evidence, and its lineage
     dec = eng.record_decision(ctx, statement="Assign Alice to Beta account",

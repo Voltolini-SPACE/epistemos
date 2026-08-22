@@ -4,6 +4,15 @@ Mission **EPISTEMOS-02**. Eliminate the v0.1 O(N) retrieval bottleneck with a re
 tenant/temporal-aware, explainable, secure FTS index — preserving every v0.1 property and gate.
 No integration with NOMOS/Hermes/OpenClaw (still forbidden); the v0.1.0 tag is untouched.
 
+> **Historical record — do not edit.** The figures below are what was measured at v0.2 and they
+> stay as they were. They are *not* the current published claim: the `183×` in this table was later
+> quoted on the README, the site and the OG image next to a benchmark file that recorded a
+> different run. That was reconciled on **2026-08-22** by re-running the harness and publishing one
+> table. The current, authoritative figure is **100k: 5.0 s → 34 ms (~146×)** — see
+> [`benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md`](benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md) and
+> [`final/PUBLIC_CLAIMS_AUDIT.md`](final/PUBLIC_CLAIMS_AUDIT.md). The ratio moves with the host; the
+> order of magnitude does not.
+
 ## Headline result
 
 Lexical search latency (selective query), legacy O(N) scan → indexed FTS5:

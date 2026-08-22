@@ -154,14 +154,17 @@ def render(hw: dict, rows: list[dict]) -> str:
     L.append("")
     L.append("## Write amplification (ETAPA 11)")
     L.append("")
-    L.append("Every write now also updates the FTS index (in the same transaction). Measured indexed")
+    L.append("Every write now also updates the FTS index (in the same transaction). "
+             "Measured indexed")
     L.append("write p50 above vs the v0.1 no-index baseline (`RESULTS.md`: ~0.36/0.41/0.42 ms at")
-    L.append("1k/10k/100k). The index adds a small, roughly-flat per-write cost; write latency stays")
+    L.append("1k/10k/100k). The index adds a small, roughly-flat per-write cost; "
+             "write latency stays")
     L.append("sub-millisecond and does not grow materially with scale.")
     L.append("")
     L.append("## Conclusion")
     L.append("")
-    L.append("Indexed lexical search is **orders of magnitude** faster than the legacy O(n) scan and")
+    L.append("Indexed lexical search is **orders of magnitude** faster than the legacy "
+             "O(n) scan and")
     L.append("stays ~flat with scale, while write latency remains sub-millisecond and all v0.1")
     L.append("semantics (temporal, provenance, tenancy, explainability) are preserved. The legacy")
     L.append("scan is retained as the correctness reference and the safe fallback (ADR-019).")

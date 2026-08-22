@@ -1,0 +1,108 @@
+name: CI
+
+# Every gate in docs/STATUS.md claims to be reproducible evidence. This workflow is what makes
+# that true off the author's machine: the suite, the linters and the mutation battery re-run on
+# every push and pull request, on more than one Python and more than one OS.
+
+on:
+  push:
+    branches: ["main", "feat/**", "fix/**"]
+    tags: ["epistemos-v*"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests · py${{ matrix.python }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install (zero runtime dependencies by design)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Prove the package imports with no third-party runtime deps
+        run: python -c "import epistemos; print(epistemos.__version__)"
+
+      - name: Prove the installed console script exists
+        run: epistemos --version
+
+      # Deliberately the bare `pytest`, not `python -m pytest`: the bare form is what a
+      # contributor types, and it used to fail to collect. This step is the regression guard.
+      - name: Tests
+        run: pytest -q
+
+  quality:
+    name: ruff + mypy --strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Ruff (whole repository, not just src/)
+        run: ruff check .
+      - name: Mypy --strict
+        run: mypy
+
+  mutation:
+    name: mutation battery (critical boundaries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      # Exits non-zero if any non-equivalent mutant SURVIVED or was INVALID. An INVALID mutant
+      # means the mutation never landed — a silent false green this gate refuses to accept.
+      - name: Core claim boundaries
+        run: python tools/mutation_harness.py
+      - name: Panel boundaries
+        run: python tools/mutation_panel.py
+      - name: Report is reproducible (harness must not dirty the worktree)
+        run: git diff --exit-code -- docs/security/MUTATION_REPORT.md
+
+  build:
+    name: wheel + sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+      - run: python -m build
+      - name: Validate distribution metadata (catches broken project URLs)
+        run: twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

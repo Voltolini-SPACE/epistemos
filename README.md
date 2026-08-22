@@ -63,7 +63,7 @@ The protocol is **adapter-ready** for NOMOS / Hermes / OpenClaw and any custom a
 dependency on any of them (spec-only integration notes in [`docs/integrations/`](docs/integrations/)).
 See [`docs/protocol/`](docs/protocol/).
 
-Adversarially audited across every release. **996 tests** (incl. a private-leak battery, a
+Adversarially audited across every release. **1007 tests** (incl. a private-leak battery, a
 full-stack HTTP boundary, and an EPCTX protocol suite across all three transports), mutation
 **39/39** killed on the claim core, **6/6** on the Context Envelope, and **7/7** on the EPCTX
 protocol, ruff + mypy `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the
@@ -71,7 +71,11 @@ gate matrix and [`docs/EPISTEMOS_PANEL_V1_FINAL_REPORT.md`](docs/EPISTEMOS_PANEL
 for the Panel's freeze evidence.
 
 **Measured, reproducible** (`benchmarks/`, `tools/`):
-- 100k lexical **search: 6.2 s → 34 ms (~183×)** vs the O(N) scan (v0.2, FTS5 index).
+- 100k lexical **search: 5.0 s → 34 ms (~146×)** vs the O(N) scan (v0.2, FTS5 index).
+  Re-measured 2026-08-22 on the reference machine; the single authoritative table is
+  [`docs/benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md`](docs/benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md).
+  Earlier releases published `~183×` from a different run — the ratio moves with the host, the
+  order of magnitude does not.
 - `explain()` **provenance: ~1.9 s → ~0.05 ms at 100k (~33,800×)** (v0.3, provenance index).
 - Context Envelope: **up to ~35% fewer tokens** in measured redundant scenarios (entity-focused
   current-state / history queries), stable as the corpus grows, with **zero** evidence,
@@ -97,6 +101,62 @@ for the Panel's freeze evidence.
 12. **Append-oriented history** — a hash-chained, tamper-evident event ledger is the truth.
 13. **Multi-tenant by design** — tenant/principal/namespace on every read and write.
 14. **Fail-closed** — unknown tenant, authorization, source, schema or integrity ⇒ refuse.
+
+## Install
+
+Not on PyPI yet (see [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md)). Install from source:
+
+```bash
+git clone https://github.com/Voltolini-SPACE/epistemos
+cd epistemos
+pip install -e ".[dev]"        # zero runtime dependencies, by design
+epistemos --version
+```
+
+## Command line
+
+Installing puts an `epistemos` command on your PATH. Every subcommand is local: none of them
+contacts the network, and the servers bind `127.0.0.1` unless you say otherwise.
+
+```bash
+epistemos panel --demo                     # read-only Panel on a real demo corpus
+epistemos serve --db kb.epistemos \
+                --token s3cret=claude      # authorized REST read model (401 without a token)
+epistemos mcp   --db kb.epistemos          # MCP tool registry over stdio
+epistemos verify kb.epistemos              # hash chain + index consistency; exit 1 on failure
+```
+
+`verify` accepts anchors kept outside the store, which is what makes tail-truncation and full
+re-chain rewrites detectable:
+
+```bash
+epistemos verify kb.epistemos --expect-count 4210 --expect-head 9f2c… --json
+```
+
+### Use it from an MCP agent
+
+The MCP server exposes a **fixed** tool registry — there is no `execute`, `eval` or `query_raw_sql`,
+and tool arguments can never choose the tenant or namespace: the identity is fixed server-side when
+the process starts.
+
+```bash
+claude mcp add epistemos -- epistemos mcp --db /absolute/path/kb.epistemos \
+                                          --tenant acme --agent claude --namespace hr
+```
+
+For any other MCP client, the equivalent entry is:
+
+```json
+{
+  "mcpServers": {
+    "epistemos": {
+      "command": "epistemos",
+      "args": ["mcp", "--db", "/absolute/path/kb.epistemos",
+               "--tenant", "acme", "--agent", "claude", "--namespace", "hr"]
+    }
+  }
+}
+```
 
 ## Quickstart
 
@@ -238,7 +298,10 @@ Re-importable with integrity verification. EPISTEMOS is not a data prison.
 
 ## Documentation
 
-- `docs/research/` — competitor census, feature harvest, final research report
+- **[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) — what this system does *not* do.**
+  Read it before adopting: no semantic retrieval, no unstructured ingestion, single node, no
+  score on any shared benchmark.
+- `docs/research/` — competitor census (two tiers), feature harvest, final research report
 - `docs/spec/` — [core data model](docs/spec/CORE_MODEL.md), [memory model](docs/spec/MEMORY_MODEL.md)
 - `docs/adr/` — [architecture decision records](docs/adr/README.md) (ADR-001 … ADR-044)
 - `docs/spaces/` — [Knowledge Spaces](docs/spaces/KNOWLEDGE_SPACE_MODEL.md) & capability model (v0.4)

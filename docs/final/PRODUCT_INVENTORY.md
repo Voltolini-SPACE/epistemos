@@ -26,7 +26,7 @@ Everything public, in one place, so nothing is forgotten at freeze.
 
 ## Tests / gates at freeze
 
-- **996 tests** (core + panel + protocol), ruff + mypy `--strict` clean.
+- **1007 tests** (core + panel + protocol + CLI), ruff + mypy `--strict` clean.
 - Mutation: 39/39 claim core, 9/9 panel, 6/6 Context Envelope, 7/7 EPCTX protocol.
 - Leak invariants at zero: tenant / space / claim / EPCTX / expansion / panel-UI / graph / search / stream.
 - Zero-egress (core), no mandatory LLM, zero runtime dependencies.
