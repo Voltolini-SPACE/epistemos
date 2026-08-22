@@ -18,7 +18,7 @@ data (never executed, never dereferenced); the core makes no network calls.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, overload
@@ -51,6 +51,7 @@ from ..index import IndexHealth
 from ..index.fts import SqliteFtsIndex
 from ..index.provenance import SqliteProvenanceIndex
 from ..index.text import Tokenizer, get_tokenizer
+from ..ingest import CompilationResult
 from ..ledger import GENESIS_HASH, Event, LedgerRecord, Op, seal, verify_chain
 from ..model import (
     SCHEMA_VERSION,
@@ -591,6 +592,117 @@ class Engine:
         with self.store.atomic():
             self._emit(principal, Op.DOCUMENT_INGESTED, ts, obj)
         return Document.from_dict(obj)
+
+    def compile_document(
+        self,
+        principal: Principal,
+        *,
+        document: str,
+        rules: Sequence[Any] | None = None,
+        space: str | None = None,
+        claimant: str | None = None,
+    ) -> CompilationResult:
+        """Compile a stored document into **candidate claims**, deterministically and with no model.
+
+        This is the deliberate opposite of LLM-native ingestion. Nothing here produces truth:
+
+        * every extraction becomes a `Claim` in ``PROPOSED`` state — belief is still derived at
+          read time and acceptance is still governed (§32);
+        * every claim is attached to a `DOCUMENT` evidence pinned to the exact character span and
+          the document's ``source_hash``, so "why is this here?" is answered with a quotation;
+        * the rule that produced it is recorded, so a wrong claim indicts a *named, fixable rule*
+          rather than an opaque model call;
+        * it is **idempotent**: re-compiling the same document creates nothing new, because each
+          extraction carries a deterministic key over (document, source hash, rule, span, triple).
+
+        Returns the claims created, the keys skipped as already-present, and the per-rule tally.
+        """
+        from ..ingest import Compiler  # noqa: PLC0415 - keeps the core import graph flat
+
+        principal = _require_principal(principal)
+        principal.require("ingest")
+        doc = self._ref_readable(principal, document, what="document")
+        if doc.get("kind") != "document":
+            raise ValidationError(f"{document} is not a document")
+
+        text = str(doc.get("text", ""))
+        title = str(doc.get("title", "")) or document
+        source_hash = str(doc.get("source_hash", ""))
+
+        compiler = Compiler(rules=tuple(rules)) if rules is not None else Compiler()
+        extractions = compiler.compile(text, subject=title)
+
+        existing = {
+            str(obj.get("metadata", {}).get("compile_key"))
+            for obj in self.store.objects(principal.tenant, principal.namespace, "claim")
+            if isinstance(obj.get("metadata"), dict) and obj["metadata"].get("compile_key")
+        }
+
+        created: list[Claim] = []
+        skipped: list[str] = []
+        by_rule: dict[str, int] = {}
+
+        for item in extractions:
+            key = hash_obj({
+                "document": document,
+                "source_hash": source_hash,
+                "rule": item.rule,
+                "span": [item.span.start, item.span.end],
+                "subject": item.subject,
+                "predicate": item.predicate,
+                "object": item.object,
+            })
+            if key in existing:
+                skipped.append(key)
+                continue
+
+            claim = self.create_claim(
+                principal,
+                subject=item.subject,
+                predicate=item.predicate,
+                object=item.object,
+                claimant=claimant,
+                source=doc.get("source"),
+                confidence=item.confidence,
+                space=space,
+                metadata={
+                    "compile_key": key,
+                    "compiled_from": document,
+                    "compiler_rule": item.rule,
+                    "span_start": item.span.start,
+                    "span_end": item.span.end,
+                },
+            )
+            evidence = self.create_evidence(
+                principal,
+                evidence_kind=EvidenceKind.DOCUMENT.value,
+                title=f"{title} [{item.span.start}:{item.span.end}]",
+                content_hash=source_hash or None,
+                origin=document,
+                space=space,
+                metadata={
+                    "quote": item.span.text(text),
+                    "span_start": item.span.start,
+                    "span_end": item.span.end,
+                    "compiler_rule": item.rule,
+                },
+            )
+            self.attach_evidence(
+                principal,
+                evidence_id=evidence.id,
+                to_claim=claim.id,
+                relation=EvidenceRelation.SUPPORTS.value,
+            )
+            created.append(claim)
+            existing.add(key)
+            by_rule[item.rule] = by_rule.get(item.rule, 0) + 1
+
+        return CompilationResult(
+            document=document,
+            claims=tuple(created),
+            skipped=tuple(skipped),
+            by_rule=dict(sorted(by_rule.items())),
+        )
 
     # ======================================================================
     # facts (bitemporal)

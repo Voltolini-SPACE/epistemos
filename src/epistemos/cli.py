@@ -115,6 +115,96 @@ def _cmd_mcp(args: argparse.Namespace, rest: list[str]) -> int:
     return 0
 
 
+def _cmd_compile(args: argparse.Namespace, rest: list[str]) -> int:
+    """Compile a text file into candidate claims. Nothing here becomes accepted knowledge."""
+    from pathlib import Path  # noqa: PLC0415
+
+    from .core import Engine  # noqa: PLC0415
+    from .identity import Principal  # noqa: PLC0415
+    from .ingest import compile_text  # noqa: PLC0415
+
+    path = Path(args.file)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        sys.stderr.write(f"error: cannot read {args.file} — {exc.strerror or exc}\n")
+        return 2
+    except UnicodeDecodeError:
+        sys.stderr.write(
+            f"error: {args.file} is not UTF-8 text.\n"
+            f"       The compiler reads text; convert or extract it first.\n"
+        )
+        return 2
+
+    title = args.title or path.stem
+
+    if args.dry_run:
+        # Show what *would* be proposed, without writing anything. Inspecting before committing
+        # is the point: these are candidates, and a wrong one indicts a named rule.
+        extractions = compile_text(text, subject=title)
+        if args.json:
+            sys.stdout.write(json.dumps([
+                {"subject": e.subject, "predicate": e.predicate, "object": e.object,
+                 "rule": e.rule, "confidence": e.confidence,
+                 "span": [e.span.start, e.span.end], "quote": e.span.text(text)}
+                for e in extractions
+            ], indent=2, ensure_ascii=False) + "\n")
+        else:
+            sys.stdout.write(f"{len(extractions)} candidate claim(s) from {args.file} "
+                             f"— dry run, nothing written\n\n")
+            for e in extractions:
+                obj = f" -> {e.object}" if e.object else ""
+                sys.stdout.write(f"  [{e.rule} {e.confidence:.2f}] "
+                                 f"({e.subject}, {e.predicate}{obj})\n")
+                sys.stdout.write(f"      {e.span.text(text)!r}\n")
+        return 0
+
+    from ._util import hash_obj  # noqa: PLC0415
+
+    engine = Engine.open(args.db)
+    principal = Principal(tenant=args.tenant, agent=args.agent, namespace=args.namespace)
+    try:
+        # A file path names one document, so re-running this command on unchanged content must
+        # reuse the document rather than ingest a near-duplicate — otherwise every run would
+        # produce a fresh document id, defeat the content-keyed dedupe, and silently multiply
+        # the same claims. Identity is the content hash the Engine already stores.
+        digest = hash_obj({"title": title, "text": text, "mime": "text/plain"})
+        existing = next(
+            (obj for obj in engine.store.objects(args.tenant, args.namespace, "document")
+             if obj.get("source_hash") == digest),
+            None,
+        )
+        reused = existing is not None
+        doc_id = str(existing["id"]) if existing else engine.ingest_document(
+            principal, title=title, text=text
+        ).id
+        result = engine.compile_document(principal, document=doc_id, space=args.space)
+    finally:
+        engine.close()
+
+    if args.json:
+        sys.stdout.write(json.dumps({
+            "document": result.document,
+            "document_reused": reused,
+            "created": result.created,
+            "skipped": len(result.skipped),
+            "by_rule": result.by_rule,
+            "claims": [{"id": c.id, "subject": c.subject, "predicate": c.predicate,
+                        "object": c.object, "confidence": c.confidence} for c in result.claims],
+        }, indent=2, ensure_ascii=False) + "\n")
+    else:
+        sys.stdout.write(f"document   {result.document}"
+                         f"{'  (unchanged, reused)' if reused else ''}\n")
+        sys.stdout.write(f"created    {result.created} candidate claim(s)\n")
+        sys.stdout.write(f"skipped    {len(result.skipped)} (already compiled)\n")
+        for rule, count in result.by_rule.items():
+            sys.stdout.write(f"  {rule:20s} {count}\n")
+        sys.stdout.write("\nThese are PROPOSED claims, not accepted knowledge — belief stays\n"
+                         "derived and acceptance stays governed. Review them before relying on\n"
+                         "them; each one quotes the span it came from.\n")
+    return 0
+
+
 def _cmd_verify(args: argparse.Namespace, rest: list[str]) -> int:
     """Verify the hash chain and (when indexed) index consistency. Exit 1 on any failure."""
     from .core import Engine  # noqa: PLC0415
@@ -208,6 +298,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p_mcp.add_argument("--agent", default="mcp")
     p_mcp.add_argument("--namespace", default="kb")
     p_mcp.set_defaults(func=_cmd_mcp, passthrough=False)
+
+    p_compile = sub.add_parser(
+        "compile",
+        help="compile a text file into candidate claims (deterministic, no model)",
+    )
+    p_compile.add_argument("file", help="UTF-8 text or Markdown file to compile")
+    p_compile.add_argument("--db", default=None, help="path to a .epistemos file")
+    p_compile.add_argument("--title", default=None,
+                           help="document title (defaults to the file name)")
+    p_compile.add_argument("--space", default=None, help="knowledge space for the claims")
+    p_compile.add_argument("--tenant", default="default")
+    p_compile.add_argument("--agent", default="compiler")
+    p_compile.add_argument("--namespace", default="kb")
+    p_compile.add_argument("--dry-run", action="store_true",
+                           help="show what would be proposed; write nothing")
+    p_compile.add_argument("--json", action="store_true", help="emit the result as JSON")
+    p_compile.set_defaults(func=_cmd_compile, passthrough=False)
 
     p_verify = sub.add_parser("verify", help="verify the hash chain and index consistency")
     p_verify.add_argument("db", help="path to a .epistemos file")

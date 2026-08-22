@@ -251,8 +251,15 @@ generic agent harness, without coupling the core to any consumer. ADR-038…044.
 | MUTATION NON_EQUIVALENT_SURVIVED = 0 | ✅ | 7/7 killed; `tools/eps09_mutation.py` |
 | AGENT_BENCH | ✅ | `tools/eps09_agent_bench.py`: EPCTX makes dispute/temporal/provenance available (raw does not) |
 | BACKWARD_COMPAT | ✅ | `engine.search` + `engine.context` unchanged; EPCTX additive |
-| FULL REGRESSION | ✅ | **1007 passed** (bare `pytest` and `python -m pytest`); ruff (whole repo) + mypy `--strict` clean |
+| FULL REGRESSION | ✅ | **1063 passed** (bare `pytest` and `python -m pytest`); ruff (whole repo) + mypy `--strict` clean |
 | CI | ✅ | `.github/workflows/ci.yml` — suite × 4 Pythons × 2 OS, linters, mutation battery, wheel build, on every push |
+| INGESTION_DETERMINISTIC | ✅ | `tests/unit/test_ingest.py` — same bytes ⇒ same extractions (5 runs), order independent of rule registration |
+| INGESTION_PROPOSES_NEVER_ASSERTS | ✅ | compiled claims are `proposed`; `current()` stays `None`; belief still derived, acceptance still governed |
+| INGESTION_TRACEABLE | ✅ | every claim carries its rule + a `DOCUMENT` evidence whose quote equals `text[span_start:span_end]` |
+| INGESTION_IDEMPOTENT | ✅ | re-compiling an unchanged document creates 0; `epistemos compile` reuses the document by content hash |
+| INGESTION_ISOLATION | ✅ | `tests/security/test_ingest_isolation.py` — dedupe scan is tenant/namespace-scoped; no cross-tenant skip, no URI dereference |
+| INGESTION_NULL_LLM | ✅ | compiles under `NullModelProvider` and under a socket trap — no model, no egress |
+| RACE_DETERMINISTIC | ✅ | `tests/race/` 360/360 on repeated runs **and under saturated CPU**. Previously load-dependent (4/12/14 failures across runs) because `backup()` read the transaction depth outside the lock — see `PUBLIC_CLAIMS_AUDIT.md` correction 7 |
 | DOCS / ADRS (038–044) | ✅ | `docs/protocol/` (10), `docs/integrations/` (4), `docs/adr/` |
 | ZERO_EGRESS / LOCAL_FIRST / MIT | ✅ | stdlib-only transports; localhost REST; MIT |
 | NOMOS / HERMES / OPENCLAW UNTOUCHED | ✅ | spec-only integration notes; no core dependency, no import |

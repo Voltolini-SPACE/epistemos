@@ -293,16 +293,26 @@ class SQLiteStore(Store):
     def backup(self, dest_path: str | Path) -> None:
         """Consistent physical snapshot via SQLite's online backup API.
 
-        Safe to call concurrently with writers — the snapshot is transactionally
-        consistent. Used by the "backup during writes" chaos test.
+        **Concurrent writers on other threads are safe**: this waits for any in-flight transaction
+        on this store and takes the snapshot between transactions, so the copy is transactionally
+        consistent.
+
+        **Calling it from inside this store's own `atomic()` block is refused** with a
+        :class:`StorageError`. That is not a limitation to work around: the online backup API would
+        block on this connection's own ``BEGIN IMMEDIATE`` and spin on ``SQLITE_BUSY`` forever
+        (LT-05), so failing fast is the only correct answer.
         """
         dest = str(dest_path)
-        # Fail fast instead of deadlocking: the online backup API would block on the store's own
-        # open write transaction (BEGIN IMMEDIATE) and spin on SQLITE_BUSY forever (LT-05).
-        if self._depth != 0:
-            raise StorageError("backup() cannot run inside an open store transaction")
         try:
+            # The depth check must happen *while holding the lock*. Reading it outside was
+            # check-then-act: another thread could open a transaction between the check and the
+            # backup, producing the very deadlock the guard exists to prevent — and, because a
+            # writer usually *is* mid-transaction under load, it also rejected backups that were
+            # in fact perfectly safe to take a moment later. `_lock` is an RLock, so a genuine
+            # re-entrant call from inside `atomic()` still sees a non-zero depth and is refused.
             with self._lock:
+                if self._depth != 0:
+                    raise StorageError("backup() cannot run inside an open store transaction")
                 target = sqlite3.connect(dest)
                 try:
                     self._conn.backup(target)

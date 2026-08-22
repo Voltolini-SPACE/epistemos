@@ -21,7 +21,7 @@ such), **REMOVE** (overclaim — deleted or softened).
 | `PRIVATE_EPCTX / PRIVATE_EXPANSION / CROSS_TENANT_EPCTX = 0` | PROVEN | `tests/protocol/test_protocol_security.py`. |
 | Panel local-first, `is_readable`-gated; UI/graph/search/stream leak = 0 | PROVEN | `tests/panel/test_leak.py`; strict `default-src 'self'` CSP. |
 | Panel v1.1 hardening (no future-knowledge leak, anti-smuggling, inert render) | PROVEN | `docs/panel/hardening/HARDENING_REPORT.md`; `test_bitemporal.py::test_future_knowledge_leak_is_zero`. |
-| **1007 tests**, ruff + mypy `--strict` clean | PROVEN | Collection = 1007 under **both** `pytest` and `python -m pytest` (the bare form used to fail — see corrections below). Ruff is clean over the **whole repository**, not only `src/`. Re-verified by CI on every push. |
+| **1063 tests**, ruff + mypy `--strict` clean | PROVEN | Collection = 1063 under **both** `pytest` and `python -m pytest` (the bare form used to fail — see corrections below). Ruff is clean over the **whole repository**, not only `src/`. Re-verified by CI on every push. |
 | Mutation 39/39 core · 9/9 panel · 6/6 envelope · 7/7 EPCTX | PROVEN / MEASURED | `tools/mutation_harness.py`, `mutation_panel.py`, `eps08_mutation.py`, `eps09_mutation.py`. |
 | 100k lexical search **~146× (5.0 s → 34 ms)** via FTS5 | MEASURED | `docs/benchmarks/EPISTEMOS_02_FINAL_BENCHMARK.md` — re-run 2026-08-22, reference hardware, single authoritative table. Supersedes the earlier `183× (6.2 s → 34 ms)`, which quoted a different run than the file it linked. The speedup is host-dependent; the order of magnitude is not. |
 | `explain()` ~33,800× at 100k (~1.9 s → 0.05 ms) | MEASURED | `EPISTEMOS_03_FINAL_BENCHMARK.md`; ADR-022. |
@@ -30,7 +30,9 @@ such), **REMOVE** (overclaim — deleted or softened).
 | NOMOS / Hermes / OpenClaw integration | ROADMAP | Spec-only (`docs/integrations/`); suite runs with none imported. Disclosed as planned/adapter-ready, never as shipped. |
 | ~~"the only surveyed design that is simultaneously bitemporal, deterministic, hash-anchored, fail-closed, explainable, local-first"~~ | **REMOVE** | Falsified 2026-08-22. Six peer projects make the same combination of claims (statewave, mnemos, talamus, verimem, cormex, Mneme). The original census surveyed only the large LLM-native systems. Claim now scoped to tier 1 explicitly; see `docs/research/COMPETITOR_MATRIX.md` §Tier 2. |
 | Semantic / vector retrieval | **NOT SHIPPED** | `VectorIndex` is a Protocol; only `NullVectorIndex` is implemented. Disclosed in `docs/KNOWN_LIMITATIONS.md`. Never claimed on any surface. |
-| Ingestion from unstructured text | **NOT SHIPPED** | Knowledge must be supplied as structured objects. Disclosed in `docs/KNOWN_LIMITATIONS.md`. |
+| Deterministic ingestion — text compiles to **candidate claims**, never accepted truth | PROVEN | `Engine.compile_document` / `epistemos compile`; `tests/unit/test_ingest.py` (compiled claims are `proposed`, `current()` stays `None`), `tests/security/test_ingest_isolation.py`. No model, no network: runs under `NullModelProvider` and under a socket trap. |
+| Compiled claims are byte-reproducible and idempotent | PROVEN | `test_compilation_is_byte_reproducible`, `test_recompiling_an_unchanged_document_creates_nothing`. Dedupe key covers (document, source hash, rule, span, triple). |
+| Ingestion **recall** on unstructured prose | **LOW BY DESIGN** | The rules read unambiguous structure plus an enumerated set of sentence patterns; prose in an uncovered shape yields nothing, silently (`test_prose_without_a_recognized_shape_yields_nothing`). Disclosed in `docs/KNOWN_LIMITATIONS.md` — this is not a claim of extraction parity with LLM-native systems. |
 | Score on LoCoMo / LongMemEval / BEAM | **NONE** | No number published on any shared benchmark, so no public comparison is possible in either direction. Disclosed in `docs/KNOWN_LIMITATIONS.md`. |
 | `pip install epistemos` | **NOT AVAILABLE** | Not published to PyPI; install is `git clone` + editable. README says so; no surface implies otherwise. |
 
@@ -52,6 +54,17 @@ An independent re-run of every gate on the frozen tree found the code claims sou
    `benchmarks/compare_retrieval.py` and propagating **one** table to README, site, OG and this
    audit. Where the honest number moved, the honest number was published.
 6. **Uniqueness claim retired** (row above). The census had surveyed only tier 1.
+7. **`SQLiteStore.backup()` contract corrected, and a real check-then-act race fixed.** The
+   docstring promised it was "safe to call concurrently with writers"; the code read the
+   transaction depth **outside** the lock and refused whenever a writer happened to be mid-
+   transaction. Two consequences: safe backups were rejected under load, and — worse — a writer
+   could open a transaction between the check and the backup, producing exactly the `SQLITE_BUSY`
+   deadlock (LT-05) the guard existed to prevent. The check now happens while holding the lock, so
+   a backup waits for an in-flight writer instead of failing, while a genuinely re-entrant call
+   from inside `atomic()` is still refused. This was surfacing as **flaky RACE gates**: the same
+   suite produced 4, 12 and 14 failures across runs on the *unmodified* tree. It now passes 360/360
+   on repeated runs and under saturated CPU. A gate that only passed when the scheduler cooperated
+   was never evidence.
 
 Two defects outside the claim surface were fixed in the same pass: a bare `pytest` invocation
 failed to collect (21 errors — the "996 tests" claim was irreproducible for anyone who typed the

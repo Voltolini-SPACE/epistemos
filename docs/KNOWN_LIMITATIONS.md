@@ -22,14 +22,31 @@ written.
 
 ## Ingestion
 
-**Knowledge must be supplied as structured objects.** There is no path from raw text to claims.
-`ModelProvider.extract_triples` is a documented optional capability, and the default
-`NullModelProvider` refuses it by design — so with no model configured there is no extraction at
-all, deterministic or otherwise.
+Since v0.8 there **is** a path from raw text to knowledge: `Engine.compile_document` /
+`epistemos compile` reads a document deterministically and proposes candidate claims, each pinned
+to the character span it came from. It needs no model and makes no network call. What it does not
+do:
 
-Consequence: adopting EPISTEMOS means writing the ingestion layer yourself. Competing systems
-accept a document or a conversation turn and build the graph for you. This is the single largest
-practical barrier to trying the project.
+- **It is not an NER and does not pretend to be one.** The built-in rules read unambiguous
+  structure (`Key: Value`, front matter, definition lists, table rows) plus a small, explicitly
+  enumerated set of relational sentence patterns. Free-flowing prose that states a fact in a shape
+  no rule covers yields **nothing** — silently. Recall on unstructured narrative is low by design,
+  and low recall here looks identical to "the document said nothing".
+- **English-shaped sentence rules.** The structural rules are language-neutral; the relational
+  patterns (`works at`, `reports to`, `is a`, `is in`, `owns`) are not. Other languages need
+  custom rules — the registry is public and takes them, but none ship.
+- **Editing a document re-proposes its unchanged lines.** Provenance points at a specific document
+  version, so a changed file is a new document and every extraction from it is new. Two documents
+  asserting the same thing are deliberately *two* claims: in an evidence-first system, two
+  independent sources are stronger than one, and collapsing them would destroy that. The cost is
+  duplication when a file is edited repeatedly. Attaching new evidence to an existing claim
+  instead — one claim, many sources — is the better model and is not implemented.
+- **Nothing it produces is true.** Every compiled claim is `PROPOSED`. Belief stays derived at read
+  time and acceptance stays governed. This is a feature, but it means compilation alone does not
+  populate `current()` — you still need review and governance to turn candidates into knowledge.
+
+For anything beyond what the rules can read with certainty, a `ModelProvider` may supply
+`extract_triples`. The default `NullModelProvider` refuses it, and nothing in the core requires it.
 
 ## Scale and concurrency
 

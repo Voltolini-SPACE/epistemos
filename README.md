@@ -63,7 +63,7 @@ The protocol is **adapter-ready** for NOMOS / Hermes / OpenClaw and any custom a
 dependency on any of them (spec-only integration notes in [`docs/integrations/`](docs/integrations/)).
 See [`docs/protocol/`](docs/protocol/).
 
-Adversarially audited across every release. **1007 tests** (incl. a private-leak battery, a
+Adversarially audited across every release. **1063 tests** (incl. a private-leak battery, a
 full-stack HTTP boundary, and an EPCTX protocol suite across all three transports), mutation
 **39/39** killed on the claim core, **6/6** on the Context Envelope, and **7/7** on the EPCTX
 protocol, ruff + mypy `--strict` clean, MIT licensed. See [`docs/STATUS.md`](docs/STATUS.md) for the
@@ -119,6 +119,7 @@ Installing puts an `epistemos` command on your PATH. Every subcommand is local: 
 contacts the network, and the servers bind `127.0.0.1` unless you say otherwise.
 
 ```bash
+epistemos compile runbook.md --dry-run     # what would be proposed — writes nothing
 epistemos panel --demo                     # read-only Panel on a real demo corpus
 epistemos serve --db kb.epistemos \
                 --token s3cret=claude      # authorized REST read model (401 without a token)
@@ -157,6 +158,31 @@ For any other MCP client, the equivalent entry is:
   }
 }
 ```
+
+## Ingestion that proposes instead of asserting
+
+Every LLM-native memory system puts a model on the write path: text goes in, "memories" come out,
+and those memories are written as if they were true. That is non-deterministic, unreplayable, and
+it launders a guess into the record.
+
+EPISTEMOS compiles text **deterministically**, and what it produces is a *candidate*, never truth:
+
+```python
+doc = eng.ingest_document(ctx, title="Payments runbook", text=open("runbook.md").read())
+result = eng.compile_document(ctx, document=doc.id)
+
+result.by_rule                  # {'kv_line': 3, 'reports_to': 1, 'works_at': 1}
+eng.belief(ctx, result.claims[0].id)["state"]        # 'proposed' — not knowledge yet
+eng.current(ctx, subject="Alice Martins", predicate="works_at")   # None. Nothing was asserted.
+```
+
+Each claim carries the rule that produced it and a `DOCUMENT` evidence pinned to the exact
+character span, so "why does the system have this?" is answered with a quotation. Re-compiling an
+unchanged document creates nothing. A wrong claim indicts a **named, fixable rule** — not an opaque
+model call. Belief stays derived; acceptance stays governed.
+
+Recall on unstructured prose is deliberately low: rules that cannot read a sentence with certainty
+decline rather than guess. See [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
 ## Quickstart
 

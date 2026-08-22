@@ -32,6 +32,16 @@ from .errors import (
     ValidationError,
 )
 from .identity import Principal
+from .ingest import (
+    BUILTIN_RULES,
+    CompilationResult,
+    Compiler,
+    Extraction,
+    PatternRule,
+    Rule,
+    Span,
+    compile_text,
+)
 from .model import (
     SCHEMA_VERSION,
     BeliefStatus,
@@ -54,6 +64,14 @@ __version__ = "0.7.0"
 
 __all__ = [
     "__version__",
+    "BUILTIN_RULES",
+    "CompilationResult",
+    "Compiler",
+    "Extraction",
+    "PatternRule",
+    "Rule",
+    "Span",
+    "compile_text",
     "Engine",
     "EngineLimits",
     "Principal",

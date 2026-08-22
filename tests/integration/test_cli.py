@@ -136,6 +136,98 @@ def test_bind_error_helper_covers_the_documented_errnos(capsys):
 # -- panel passthrough -------------------------------------------------------
 
 
+# -- compile -----------------------------------------------------------------
+
+RUNBOOK = "Owner: Alice Martins\nService: payments-api\nAlice Martins works at Acme.\n"
+
+
+def test_compile_dry_run_writes_nothing(tmp_path, capsys):
+    src = tmp_path / "runbook.md"
+    src.write_text(RUNBOOK, encoding="utf-8")
+    db = tmp_path / "kb.epistemos"
+
+    assert main(["compile", str(src), "--db", str(db), "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "dry run, nothing written" in out
+    assert "works_at" in out
+    assert not db.exists()
+
+
+def test_compile_dry_run_json_carries_the_quote(tmp_path, capsys):
+    src = tmp_path / "runbook.md"
+    src.write_text(RUNBOOK, encoding="utf-8")
+
+    assert main(["compile", str(src), "--dry-run", "--json"]) == 0
+    items = json.loads(capsys.readouterr().out)
+    assert items
+    for item in items:
+        start, end = item["span"]
+        assert item["quote"] == RUNBOOK[start:end]
+
+
+def test_compile_is_idempotent_across_runs(tmp_path, capsys):
+    """Regression: the command used to ingest a fresh document every run, so re-running it
+    multiplied the same claims instead of recognising unchanged content."""
+    src = tmp_path / "runbook.md"
+    src.write_text(RUNBOOK, encoding="utf-8")
+    db = tmp_path / "kb.epistemos"
+    argv = ["compile", str(src), "--db", str(db), "--json"]
+
+    assert main(argv) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert main(argv) == 0
+    second = json.loads(capsys.readouterr().out)
+
+    assert first["created"] > 0
+    assert first["document_reused"] is False
+    assert second["created"] == 0
+    assert second["skipped"] == first["created"]
+    assert second["document_reused"] is True
+    assert second["document"] == first["document"]
+
+
+def test_compile_of_edited_content_is_a_new_document(tmp_path, capsys):
+    src = tmp_path / "runbook.md"
+    src.write_text(RUNBOOK, encoding="utf-8")
+    db = tmp_path / "kb.epistemos"
+    argv = ["compile", str(src), "--db", str(db), "--json"]
+
+    assert main(argv) == 0
+    first = json.loads(capsys.readouterr().out)
+    src.write_text(RUNBOOK + "Team: platform\n", encoding="utf-8")
+    assert main(argv) == 0
+    second = json.loads(capsys.readouterr().out)
+
+    assert second["document"] != first["document"]
+    assert second["document_reused"] is False
+
+
+def test_compile_reports_that_claims_are_proposals(tmp_path, capsys):
+    """The command must not let anyone mistake a compiled claim for accepted knowledge."""
+    src = tmp_path / "runbook.md"
+    src.write_text(RUNBOOK, encoding="utf-8")
+
+    assert main(["compile", str(src), "--db", str(tmp_path / "kb.epistemos")]) == 0
+    out = capsys.readouterr().out
+    assert "PROPOSED claims, not accepted knowledge" in out
+
+
+def test_compile_of_a_missing_file_is_a_message_not_a_traceback(tmp_path, capsys):
+    assert main(["compile", str(tmp_path / "nope.md"), "--dry-run"]) == 2
+    err = capsys.readouterr().err
+    assert "cannot read" in err
+    assert "Traceback" not in err
+
+
+def test_compile_of_binary_content_is_refused_cleanly(tmp_path, capsys):
+    blob = tmp_path / "image.png"
+    blob.write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe\xfd")
+    assert main(["compile", str(blob), "--dry-run"]) == 2
+    err = capsys.readouterr().err
+    assert "not UTF-8 text" in err
+    assert "Traceback" not in err
+
+
 def test_panel_subcommand_forwards_argv_verbatim(monkeypatch):
     """`epistemos panel` must not re-parse the Panel's flags — there is one implementation."""
     seen: list[list[str]] = []
